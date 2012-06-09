@@ -5,7 +5,11 @@
 #include <signal.h>
 #include <errno.h>
 #include <sys/wait.h>
+#include <assert.h>
+
 #include "verben.h"
+#include "notifier.h"
+#include "shmq.h"
 #include "config.h"
 #include "dll.h"
 #include "log.h"
@@ -54,6 +58,9 @@ vb_process_t vb_processes[VB_MAX_PROCESSES];
 int vb_process;
 int vb_process_slot;
 int vb_last_process;
+
+shmq_t *recv_queue;
+shmq_t *send_queue;
 
 /* for loading so file */
 void * handle;
@@ -358,12 +365,24 @@ static void master_process_cycle() {
         exit(1);
     }
 
+    /* Create the notifier between worker processes and conn process. */
+    if (notifier_create() < 0) {
+        BOOT_FAILED("Create notifier between workers and conn process");
+    }
+
+    assert(recv_queue = shmq_create(1 << 26));
+    assert(send_queue = shmq_create(1 << 26));
+
     create_processes(conn_process_cycle, NULL, 
             PROG_NAME":[conn]", 1, VB_PROCESS_RESPAWN);
     create_processes(worker_process_cycle, NULL, 
             PROG_NAME":[worker]",
             config_get_int_value(&conf, "worker_num", 4),
             VB_PROCESS_RESPAWN);
+
+    /* Close notifier between workers and conn process. */
+    notifier_close_rd();
+    notifier_close_wr();
 
     sigemptyset(&set);
     for ( ; ; ) {
@@ -379,6 +398,7 @@ static void master_process_cycle() {
             if (dll.handle_fini) {
                 dll.handle_fini(NULL, vb_process);
             }
+            /* TODO */
             exit(0);
         }
 

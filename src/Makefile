@@ -1,9 +1,9 @@
 DEBUG = -g -DDEBUG
 CC = gcc
 CFLAGS  = $(DEBUG)
-LIB 	= -ldl -rdynamic
+LIB 	= -ldl -rdynamic -lpthread
 INC     = -I../inc
-OO	= verben.o dll.o log.o config.o
+OO	= verben.o dll.o log.o config.o lock.o shmq.o notifier.o anet.o dlist.o
 TARGETS = verben
 
 all: $(TARGETS) $(BIN)
@@ -13,6 +13,9 @@ $(TARGETS): $(OO)
 
 install:
 	install $(TARGETS) ../bin/
+
+#deps
+shmq.o: lock.c shmq.c
 
 .c.o:
 	$(CC) $(CFLAGS) $< -c -o $@ $(INC)

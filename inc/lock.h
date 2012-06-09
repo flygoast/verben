@@ -1,0 +1,47 @@
+#ifndef __LOCK_H_INCLUDED__
+#define __LOCK_H_INCLUDED__
+
+/* You should define a mode to choose a lock type. */
+
+#ifdef SYSVSEM_LOCK_MODE
+typedef struct lock_struct {
+    int semid;
+} lock_t;
+
+#define LOCK_INIT(l) \
+    ((l)->semid = sysv_sem_init(NULL) < 0 ? -1 : 0)
+#define LOCK_LOCK(l)    sysv_sem_lock((l)->semid)
+#define LOCK_UNLOCK(l)  sysv_sem_unlock((l)->semid)
+#define LOCK_DESTROY(l) sysv_sem_destroy((l)->semid)
+
+#elif defined(PTHREAD_LOCK_MODE)
+typedef struct lock_struct {
+    pthread_mutex_t mutex;
+} lock_t;
+
+#define LOCK_INIT(l)    pthread_lock_init(&((l)->mutex))
+#define LOCK_LOCK(l)    pthread_do_lock(&((l)->mutex))
+#define LOCK_UNLOCK(l)  pthread_do_unlock(&((l)->mutex))
+#define LOCK_DESTROY(l) pthread_lock_destroy(&((l)->mutex))
+
+#endif
+
+/* System V semaphore implementation of lock. */
+int sysv_sem_init(const char *pathname);
+int sysv_sem_lock(int semid);
+int sysv_sem_unlock(int semid);
+void sysv_sem_destroy(int semid);
+
+#define LOCK_RD 0
+#define LOCK_WR 1
+int fcntl_init(const char *pathname);
+int fcntl_lock(int fd, int flag);
+int fcntl_unlock(int fd);
+void fcntl_destory(int fd);
+
+int pthread_lock_init(pthread_mutex_t *mutexptr);
+int pthread_do_lock(pthread_mutex_t *mutexptr);
+int pthread_do_unlock(pthread_mutex_t *mutexptr);
+void pthread_lock_destroy(pthread_mutex_t *mutexptr);
+
+#endif /* __LOCK_H_INCLUDED__ */
