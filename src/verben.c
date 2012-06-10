@@ -8,8 +8,11 @@
 #include <assert.h>
 
 #include "verben.h"
+#include "daemon.h"
 #include "notifier.h"
 #include "shmq.h"
+#include "conn.h"
+#include "worker.h"
 #include "config.h"
 #include "dll.h"
 #include "log.h"
@@ -46,12 +49,6 @@ typedef struct {
     unsigned exiting:1;
     unsigned exited:1;
 } vb_process_t;
-
-typedef struct dll_func_struct {
-    int (*handle_init)(const void *data, int proc_type);
-    int (*handle_fini)(const void *data, int proc_type);
-    int (*handle_task)(const void *data);
-} dll_func_t;
 
 /* Global variables */
 vb_process_t vb_processes[VB_MAX_PROCESSES];
@@ -164,6 +161,13 @@ static void vb_signal_handler(int signo) {
             break;
         }
         break;
+    case VB_PROCESS_CONN:
+        switch (signo) {
+        case SIGTERM:
+            ae_stop(ael);
+            break;
+        }
+        break;
     }
 
     if (signo == SIGCHLD) {
@@ -217,6 +221,7 @@ static pid_t spawn_process(child_proc_t proc, const void *data,
     case -1:
         return -1;
     case 0: /* child process */
+        daemon_set_title(name);
         proc(data);
         break;
     default:
@@ -295,36 +300,6 @@ static int reap_children() {
     return live;
 }
 
-static void conn_process_cycle(const void *data) {
-    printf("conn");
-}
-
-static void worker_process_cycle(const void *data) {
-    vb_process = VB_PROCESS_WORKER;
-    
-    if (dll.handle_init) {
-        dll.handle_init("Worker init", vb_process);
-    }
-
-    for ( ; ; ) {
-        if (vb_worker_quit) {
-            if (dll.handle_fini) {
-                dll.handle_fini("worker_finish", vb_process);
-            }
-            printf("process[%d] will exit...\n", getpid());
-            exit(0);
-        }
-
-        dll.handle_task(data);
-
-        /*
-        printf("pid=%d ppid=%d pgid=%d\n",  
-                getpid(), getppid(), getpgrp());
-        sleep(1);
-        */
-    }
-}
-
 static void create_processes(child_proc_t func,
         const void *data, char *proc_name, int n, int type) {
     int i = 0;
@@ -398,7 +373,6 @@ static void master_process_cycle() {
             if (dll.handle_fini) {
                 dll.handle_fini(NULL, vb_process);
             }
-            /* TODO */
             exit(0);
         }
 
@@ -413,11 +387,17 @@ static void master_process_cycle() {
 
 /*---------------------------- main ---------------------------*/
 int main(int argc, char *argv[]) {
+    char **saved_argv;
     char *so_name = NULL;
+
     symbol_t syms[] = {
-        {"handle_init", (void **)&dll.handle_init, 1},
-        {"handle_fini", (void **)&dll.handle_fini, 1},
-        {"handle_task", (void **)&dll.handle_task, 0},
+        /* symbol_name,     function pointer,       optional */
+        {"handle_init",     (void **)&dll.handle_init,       1},
+        {"handle_fini",     (void **)&dll.handle_fini,       1},
+        {"handle_open",     (void **)&dll.handle_open,       1},
+        {"handle_close",    (void **)&dll.handle_close,      1},
+        {"handle_input",    (void **)&dll.handle_input,      0},
+        {"handle_process",  (void **)&dll.handle_process,    0},
         {NULL, NULL, 0}
     };
     vb_process = VB_PROCESS_MASTER;
@@ -466,14 +446,21 @@ int main(int argc, char *argv[]) {
     BOOT_OK("load so file %s", so_name ? so_name : "(NULL)");
 
     if (dll.handle_init) {
-        dll.handle_init("Handle_init", vb_process);
+        if (dll.handle_init(NULL, vb_process) != 0) {
+            BOOT_FAILED("handle_init");
+        }
     }
 
-    printf("Master:pid=%d, ppid=%d, pgrp=%d\n",
-        getpid(), getppid(), getpgrp());
+#ifdef DEBUG
     printf("Start...\n");
+#endif /* DEBUG */
 
+    saved_argv = daemon_argv_dup(argc, argv);
+    if (!saved_argv) {
+        BOOT_FAILED("daemonized");
+    }
+
+    daemon_set_title("%s:[master]", PROG_NAME);
     master_process_cycle();
-
     exit(0);
 }

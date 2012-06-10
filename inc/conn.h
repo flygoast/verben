@@ -1,6 +1,8 @@
 #ifndef __CONN_H_INCLUDED__
 #define __CONN_H_INCLUDED__
 
+#include "ae.h"
+
 typedef struct sock_info {
     int         sockfd;
     int         type;
@@ -27,5 +29,9 @@ typedef struct shm_msg {
     u_int       accept_fd;
     char        data[0];
 } __attribute__((packed)) shm_msg;
+
+
+extern ae_event_loop    *ael;
+void conn_process_cycle(const void *data);
 
 #endif /* __CONN_H_INCLUDED__ */

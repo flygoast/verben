@@ -33,8 +33,8 @@ int notifier_create() {
         return -1;
     }
 
-    assert(fd_nonblock(pipe_fds[0] == 0));
-    assert(fd_nonblock(pipe_fds[1] == 0));
+    assert(fd_nonblock(pipe_fds[0]) == 0);
+    assert(fd_nonblock(pipe_fds[1]) == 0);
     fcntl(pipe_fds[0], F_SETFD, FD_CLOEXEC);
     fcntl(pipe_fds[1], F_SETFD, FD_CLOEXEC);
     return 0;

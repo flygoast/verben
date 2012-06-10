@@ -3,7 +3,8 @@ CC = gcc
 CFLAGS  = $(DEBUG)
 LIB 	= -ldl -rdynamic -lpthread
 INC     = -I../inc
-OO	= verben.o dll.o log.o config.o lock.o shmq.o notifier.o anet.o dlist.o
+OO	= verben.o dll.o log.o config.o lock.o shmq.o notifier.o \
+      anet.o dlist.o worker.o conn.o ae.o sds.o daemon.o
 TARGETS = verben
 
 all: $(TARGETS) $(BIN)

@@ -231,6 +231,8 @@ int shmq_push(shmq_t *q, void *data, int len, int flag) {
 int shmq_pop(shmq_t *q, void **retdata, int *len, int flag) {
     shmq_block_t *cur_blk;
     int ret = -1;
+    assert(retdata && len);
+    *retdata = NULL;
 
     SEM_LOCK(&q->lock, flag);
 
