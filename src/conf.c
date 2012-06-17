@@ -4,7 +4,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <alloca.h>
-#include "config.h"
+#include "conf.h"
 
 #define CONF_SLOTS_INITIAL_NUM      100
 #define MAX_LINE                    1024
@@ -95,13 +95,13 @@ static int str2int(const char *strval, int def) {
     return ret;
 }
 
-int config_init(config_t *conf, const char *filename) {
+int conf_init(conf_t *conf, const char *filename) {
     int n;
     int ret = 0;
     FILE *fp;
     char buf[MAX_LINE];
-    config_entry_t *pentry;
-    config_entry_t **ptemp;
+    conf_entry_t *pentry;
+    conf_entry_t **ptemp;
     char *field[2];
 
     if (!(fp = fopen(filename, "r"))) {
@@ -109,7 +109,7 @@ int config_init(config_t *conf, const char *filename) {
         return -1;
     }
 
-    conf->list = (config_entry_t **)calloc(sizeof(config_entry_t *),
+    conf->list = (conf_entry_t **)calloc(sizeof(conf_entry_t *),
         CONF_SLOTS_INITIAL_NUM);
     if (!conf->list) {
         fprintf(stderr, "calloc failed\n");
@@ -126,7 +126,7 @@ int config_init(config_t *conf, const char *filename) {
         }
 
         if (*buf != '#' && str_explode(NULL, buf, field, 2) == 2) {
-            pentry = (config_entry_t*)malloc(sizeof(config_entry_t));
+            pentry = (conf_entry_t*)malloc(sizeof(conf_entry_t));
             if (!pentry) {
                 fprintf(stderr, "malloc failed\n");
                 ret = -1;
@@ -136,8 +136,8 @@ int config_init(config_t *conf, const char *filename) {
             pentry->value = strdup(field[1]);
 
             if (conf->size == conf->slots) {
-                ptemp = (config_entry_t **)realloc(conf->list, 
-                    sizeof(config_entry_t*) *
+                ptemp = (conf_entry_t **)realloc(conf->list, 
+                    sizeof(conf_entry_t*) *
                     (conf->slots + CONF_SLOTS_INITIAL_NUM));
                 if (!ptemp) {
                     fprintf(stderr, "realloc failed\n");
@@ -152,13 +152,13 @@ int config_init(config_t *conf, const char *filename) {
     }
 error:
     if (ret == -1) {
-        config_free(conf);
+        conf_free(conf);
     }
     return ret;
 }
 
 
-void config_free(config_t *conf) {
+void conf_free(conf_t *conf) {
     int i;
     for (i = 0; i < conf->size; ++i) {
         if (conf->list[i]) {
@@ -171,7 +171,7 @@ void config_free(config_t *conf) {
     free(conf->list);
 }
 
-void config_dump(config_t *conf) {
+void conf_dump(conf_t *conf) {
     int i = 0;
     for (i = 0; i < conf->size; ++i) {
         if (conf->list[i]) {
@@ -184,7 +184,7 @@ void config_dump(config_t *conf) {
 }
 
 /* When key not found in conf, default value was returned. */
-int config_get_int_value(config_t *conf, const char *key, int def) {
+int conf_get_int_value(conf_t *conf, const char *key, int def) {
     int i;
     for (i = 0; i < conf->size; ++i) {
         if (!strcasecmp(key, conf->list[i]->key)) {
@@ -196,7 +196,7 @@ int config_get_int_value(config_t *conf, const char *key, int def) {
 }
 
 /* When key not found in conf, default value was returned. */
-char * config_get_str_value(config_t *conf, const char *key, 
+char * conf_get_str_value(conf_t *conf, const char *key, 
         char *def) {
     int i;
     for (i = 0; i < conf->size; ++i) {
@@ -208,16 +208,16 @@ char * config_get_str_value(config_t *conf, const char *key,
     return def;
 }
 
-#ifdef CONFIG_TEST
+#ifdef CONF_TEST
 int main(int argc, char *argv[]) {
-    config_t   conf;
-    if (config_init(&conf, argv[1]) != 0) {
-        fprintf(stderr, "config_init error\n");
+    conf_t   conf;
+    if (conf_init(&conf, argv[1]) != 0) {
+        fprintf(stderr, "conf_init error\n");
         exit(1);
     }
 
-    config_dump(&conf);
-    config_free(&conf);
+    conf_dump(&conf);
+    conf_free(&conf);
     exit(0);
 }
-#endif /* CONFIG_TEST */
+#endif /* CONF_TEST */
