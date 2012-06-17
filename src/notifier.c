@@ -26,8 +26,6 @@ static int fd_nonblock(int fd) {
 }
 
 int notifier_create() {
-    int ret;
-
     if (pipe(pipe_fds) < 0) {
         fprintf(stderr, "%s\n", strerror(errno));
         return -1;

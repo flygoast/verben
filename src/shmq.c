@@ -127,7 +127,7 @@ int shmq_push(shmq_t *q, void *data, size_t len, int flag) {
 
 shmq_push_again:
     if (shmq_stop) {
-        goto shmq_pop_error;
+        goto shmq_push_error;
     }
 
     head = q->addr->head;

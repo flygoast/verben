@@ -8,6 +8,7 @@
 #include <time.h>
 #include <limits.h>
 #include <assert.h>
+#include <sys/stat.h>
 #include <sys/mman.h>
 #include "log.h"
 
@@ -185,8 +186,6 @@ void log_write(int level, const char *fmt, ...) {
     int     status;
     va_list ap;
     time_t now;
-    int     fd;
-    char    *path;
     int     index;
 
     if (level > log_level) {

@@ -1,19 +1,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <getopt.h>
 #include <unistd.h>
 #include <signal.h>
 #include <errno.h>
 #include <sys/wait.h>
 #include <assert.h>
-
 #include "verben.h"
 #include "daemon.h"
 #include "notifier.h"
 #include "shmq.h"
 #include "conn.h"
 #include "worker.h"
-#include "config.h"
+#include "conf.h"
 #include "dll.h"
 #include "log.h"
 #include "version.h"
@@ -27,7 +27,7 @@
 #define VB_PROCESS_JUST_RESPAWN     -4
 #define VB_PROCESS_DETACHED         -5
 
-typedef void (*child_proc_t)(const void *);
+typedef void (*child_proc_t)(void *);
 
 typedef struct {
     int     signo;
@@ -39,8 +39,8 @@ typedef struct {
 typedef struct {
     pid_t           pid;
     int             status;
-    child_proc_t   proc;
-    const void      *data;
+    child_proc_t    proc;
+    void            *data;
     const char      *name; 
 
     unsigned respawn:1;
@@ -63,21 +63,33 @@ shmq_t *send_queue;
 void * handle;
 dll_func_t dll;
 
-/* config */
-config_t   conf;
+/* conf */
+conf_t   conf;
+char *conf_file;
 
 sig_atomic_t vb_reap;
 sig_atomic_t vb_quit;
 sig_atomic_t vb_worker_quit;
 static void vb_signal_handler(int signo);
 
-vb_signal_t signals[] = {
+static vb_signal_t signals[] = {
     {SIGTERM, "SIGTERM", "", vb_signal_handler},
     {SIGQUIT, "SIGQUIT", "", vb_signal_handler},
     {SIGCHLD, "SIGCHLD", "", vb_signal_handler},
     {SIGPIPE, "SIGPIPE, SIG_IGN", "", SIG_IGN},
     {SIGINT, "SIGINT", "", SIG_IGN},
     {0, NULL, "", NULL}
+};
+
+static symbol_t syms[] = {
+    /* symbol_name,     function pointer,       optional */
+    {"handle_init",     (void **)&dll.handle_init,       1},
+    {"handle_fini",     (void **)&dll.handle_fini,       1},
+    {"handle_open",     (void **)&dll.handle_open,       1},
+    {"handle_close",    (void **)&dll.handle_close,      1},
+    {"handle_input",    (void **)&dll.handle_input,      0},
+    {"handle_process",  (void **)&dll.handle_process,    0},
+    {NULL, NULL, 0}
 };
 
 static void init_vb_processes() {
@@ -89,7 +101,6 @@ static void init_vb_processes() {
 
 static void process_get_status(void) {
     int     status;
-    const char *process;
     int     i;
     pid_t   pid;
     int     one = 0;
@@ -97,32 +108,27 @@ static void process_get_status(void) {
     for ( ; ; ) {
         pid = waitpid(-1, &status, WNOHANG);
         if (pid == 0) {
-            fprintf(stderr, "xxxxxxxxxxxxxx\n");
             return;
         }
-        printf("pid=%d\n", pid);
 
         if (pid == -1) {
             if (errno == EINTR) {
                 continue;
             }
 
-            /* for what */
             if (errno == ECHILD && one) {
                 return;
             }
-            fprintf(stderr, "oooooooooooo\n");
             return;
         }
         one = 1;
 
-        printf("vb_task_process=%d\n", vb_last_process);
         for (i = 0; i < vb_last_process; ++i) {
-            printf("pid = %d, vb_processes[i].pid=%d\n", 
-                pid, vb_processes[i].pid);
             if (vb_processes[i].pid == pid) {
                 vb_processes[i].status = status;
                 vb_processes[i].exited = 1;
+                DEBUG_LOG("Process %d exit with status %d",
+                        pid, status);
                 break;
             }
         }
@@ -158,6 +164,7 @@ static void vb_signal_handler(int signo) {
         switch (signo) {
         case SIGTERM:
             vb_worker_quit = 1;
+            shmq_stop_wait();
             break;
         }
         break;
@@ -190,9 +197,8 @@ static int init_signals() {
     return 0;
 }
 
-static pid_t spawn_process(child_proc_t proc, const void *data, 
+static pid_t spawn_process(child_proc_t proc, void *data, 
         const char *name, int respawn) {
-    unsigned long on;
     int s;
     pid_t pid;
 
@@ -301,7 +307,7 @@ static int reap_children() {
 }
 
 static void create_processes(child_proc_t func,
-        const void *data, char *proc_name, int n, int type) {
+        void *data, char *proc_name, int n, int type) {
     int i = 0;
 
     for (i = 0; i < n; ++i) {
@@ -311,6 +317,7 @@ static void create_processes(child_proc_t func,
     }
 }
 
+/*
 static void signal_worker_processes(int signo) {
     int i = 0;
     for (i = 0; i < vb_last_process; ++i) {
@@ -323,6 +330,7 @@ static void signal_worker_processes(int signo) {
         }
     }
 }
+*/
 
 static void master_process_cycle() {
     int live = 1;
@@ -336,23 +344,33 @@ static void master_process_cycle() {
     sigaddset(&set, SIGQUIT);
 
     if (sigprocmask(SIG_BLOCK, &set, NULL) == -1) {
-        fprintf(stderr, "sigprocmask failed\n");
+        FATAL_LOG("sigprocmask failed");
         exit(1);
     }
 
     /* Create the notifier between worker processes and conn process. */
     if (notifier_create() < 0) {
-        BOOT_FAILED("Create notifier between workers and conn process");
+        FATAL_LOG("Create notifier between workers and conn failed");
+        exit(1);
     }
 
-    assert(recv_queue = shmq_create(1 << 26));
-    assert(send_queue = shmq_create(1 << 26));
+    if (!(recv_queue = shmq_create(
+                conf_get_int_value(&conf, "shmq_recv", 1 << 20)))) {
+        FATAL_LOG("Create shared memory queue for receiving failed");
+        exit(1);
+    }
 
-    create_processes(conn_process_cycle, NULL, 
+    if (!(send_queue = shmq_create(
+                conf_get_int_value(&conf, "shmq_send", 1 << 20)))) {
+        FATAL_LOG("Create shared memory queue for sending failed");
+        exit(1);
+    }
+
+    create_processes(conn_process_cycle, (void *)&conf, 
             PROG_NAME":[conn]", 1, VB_PROCESS_RESPAWN);
-    create_processes(worker_process_cycle, NULL, 
+    create_processes(worker_process_cycle, (void *)&conf, 
             PROG_NAME":[worker]",
-            config_get_int_value(&conf, "worker_num", 4),
+            conf_get_int_value(&conf, "worker_num", 4),
             VB_PROCESS_RESPAWN);
 
     /* Close notifier between workers and conn process. */
@@ -369,18 +387,71 @@ static void master_process_cycle() {
         }
 
         if (!live && vb_quit) {
-            printf("Master process will exit!\n");
             if (dll.handle_fini) {
-                dll.handle_fini(NULL, vb_process);
+                dll.handle_fini(&conf, vb_process);
             }
+
+            /* release relevant resources */
+            shmq_free(recv_queue);
+            shmq_free(send_queue);
+            unload_so(&handle);
             exit(0);
         }
 
         if (vb_quit) {
             if (kill(0, SIGTERM) < 0) {
-                fprintf(stderr, "kill all children failed\n");
+                FATAL_LOG("Kill all children failed");
+                exit(0);
             }
             continue;
+        }
+    }
+}
+
+static struct option const long_options[] = {
+    {"config", required_argument, NULL, 'c'},
+    {"help", no_argument, NULL, 'h'},
+    {"version", no_argument, NULL, 'v'},
+    {NULL, 0, NULL, 0}
+};
+
+static void print_info() {
+    printf("[%s]: A network server bench.\n"
+        "Version: %s\n"
+        "Copyright (c) flygoast, flygoast@126.com\n"
+        "Compiled at %s %s\n", PROG_NAME, VERBEN_VERSION, 
+            __DATE__, __TIME__);
+}
+
+static void usage(int status) {
+    if (status != EXIT_SUCCESS) {
+        fprintf(stderr, "Try `%s --help' for more information.\n",
+            PROG_NAME);
+    } else {
+        printf("\
+Usage:%10.10s [--config=<conf_file> | -c]\n\
+%10.10s       [--version | -v]\n\
+%10.10s       [--help | -h]\n", PROG_NAME, " ", " ");
+    }
+}
+
+static void parse_options(int argc, char **argv) {
+    int c;
+    while ((c = getopt_long(argc, argv, "c:hv", 
+                    long_options, NULL)) != -1) {
+        switch (c) {
+        case 'c':
+            conf_file = optarg;
+            break;
+        case 'h':
+            usage(EXIT_SUCCESS);
+            exit(EXIT_SUCCESS);
+        case 'v':
+            print_info();
+            exit(EXIT_SUCCESS);
+        default:
+            usage(EXIT_FAILURE);
+            exit(1);
         }
     }
 }
@@ -390,44 +461,30 @@ int main(int argc, char *argv[]) {
     char **saved_argv;
     char *so_name = NULL;
 
-    symbol_t syms[] = {
-        /* symbol_name,     function pointer,       optional */
-        {"handle_init",     (void **)&dll.handle_init,       1},
-        {"handle_fini",     (void **)&dll.handle_fini,       1},
-        {"handle_open",     (void **)&dll.handle_open,       1},
-        {"handle_close",    (void **)&dll.handle_close,      1},
-        {"handle_input",    (void **)&dll.handle_input,      0},
-        {"handle_process",  (void **)&dll.handle_process,    0},
-        {NULL, NULL, 0}
-    };
+
     vb_process = VB_PROCESS_MASTER;
 
-    printf(PROG_NAME": A network server bench.\n"
-        "  version: %s\n"
-        "  Copyright (c) flygoast, flygoast@126.com\n\n",
-        VERBEN_VERSION);
+    parse_options(argc, argv);
+    if (!conf_file) conf_file = "./verben.conf";
+    if (conf_init(&conf, conf_file) != 0) {
+        BOOT_FAILED("Load conf file [%s]", conf_file);
+    }
+    BOOT_OK("Load conf file [%s]", conf_file);
 
     init_vb_processes();
     BOOT_OK("Initialize process structure");
-    /* TODO: getopt */
-    
-    /* Parse config file. */
-    if (config_init(&conf, argv[1]) != 0) {
-        BOOT_FAILED("Load config file %s", argv[1]);
-    }
-    BOOT_OK("Load config file %s", argv[1]);
 
     if (init_signals() < 0) {
         BOOT_FAILED("Initialize signal handlers");
     }
     BOOT_OK("Initialize signal handlers");
 
-    if (log_init(config_get_str_value(&conf, "log_dir", "."),
-            config_get_str_value(&conf, "log_name", "taskbench.log"),
-            config_get_int_value(&conf, "log_level", LOG_LEVEL_ALL),
-            config_get_int_value(&conf, "log_size", LOG_FILE_SIZE),
-            config_get_int_value(&conf, "log_num", LOG_FILE_NUM),
-            config_get_int_value(&conf, "log_multi", LOG_MULTI_NO)) < 0) {
+    if (log_init(conf_get_str_value(&conf, "log_dir", "/tmp"),
+            conf_get_str_value(&conf, "log_name", PROG_NAME".log"),
+            conf_get_int_value(&conf, "log_level", LOG_LEVEL_ALL),
+            conf_get_int_value(&conf, "log_size", LOG_FILE_SIZE),
+            conf_get_int_value(&conf, "log_num", LOG_FILE_NUM),
+            conf_get_int_value(&conf, "log_multi", LOG_MULTI_NO)) < 0) {
         BOOT_FAILED("Initialize log file");
     }
     BOOT_OK("Initialize log file");
@@ -439,25 +496,25 @@ int main(int argc, char *argv[]) {
     BOOT_OK("Set self to be leader of the process group");
 
     /* load .so file */
-    so_name = config_get_str_value(&conf, "so_file", NULL);
+    so_name = conf_get_str_value(&conf, "so_file", NULL);
     if (load_so(&handle, syms, so_name) < 0) {
         BOOT_FAILED("load so file %s", so_name ? so_name : "(NULL)");
     }
     BOOT_OK("load so file %s", so_name ? so_name : "(NULL)");
 
+    /* Daemonize */
+    /* TODO */
+
+    /* Invoke the hook in master. */
     if (dll.handle_init) {
         if (dll.handle_init(NULL, vb_process) != 0) {
-            BOOT_FAILED("handle_init");
+            BOOT_FAILED("Invoke hook handle_init in master");
         }
     }
 
-#ifdef DEBUG
-    printf("Start...\n");
-#endif /* DEBUG */
-
     saved_argv = daemon_argv_dup(argc, argv);
     if (!saved_argv) {
-        BOOT_FAILED("daemonized");
+        BOOT_FAILED("Duplicate argv");
     }
 
     daemon_set_title("%s:[master]", PROG_NAME);

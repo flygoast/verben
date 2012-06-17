@@ -32,6 +32,6 @@ typedef struct shm_msg {
 
 
 extern ae_event_loop    *ael;
-void conn_process_cycle(const void *data);
+void conn_process_cycle(void *data);
 
 #endif /* __CONN_H_INCLUDED__ */

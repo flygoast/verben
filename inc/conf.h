@@ -12,6 +12,8 @@ typedef struct conf_t {
     unsigned int    slots;
 } conf_t;
 
+extern int str_explode(const unsigned char *ifs, unsigned char *buf, 
+        unsigned char *field[], int n);
 extern int conf_init(conf_t *conf, const char *filename);
 extern void conf_free(conf_t *conf);
 extern int conf_get_int_value(conf_t *conf, const char *key, int def);

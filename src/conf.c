@@ -10,11 +10,13 @@
 #define MAX_LINE                    1024
 
 /* "\t\n\r " */
-static const char default_ifs[256] = { [9]=1, [10]=1, [13]=1, [32]=1 };
+static const unsigned char default_ifs[256] = 
+    { [9]=1, [10]=1, [13]=1, [32]=1 };
 
-static str_explode(const char *ifs, char *buf, char *field[], int n) {
+int str_explode(const unsigned char *ifs, unsigned char *buf, 
+        unsigned char *field[], int n) {
     int i = 0;
-    char *tempifs;
+    unsigned char *tempifs;
 
     /* When ifs is NULL, use the default blanks. If the first
        byte is NULL, use the IFS table, otherwise, use the IFS
@@ -22,8 +24,8 @@ static str_explode(const char *ifs, char *buf, char *field[], int n) {
     if (ifs == NULL) {
         ifs = default_ifs;
     } else if (*ifs) {
-        tempifs = (char *)alloca(256);
-        memset(tempifs, 0, 256);
+        tempifs = (unsigned char *)alloca(256);
+        memset((void*)tempifs, 0, 256);
         while (*ifs) {
             tempifs[*ifs++] = 1;
         }
@@ -32,6 +34,7 @@ static str_explode(const char *ifs, char *buf, char *field[], int n) {
 
     i = 0;
     while (1) {
+        /* Trim the leading separators */
         while (ifs[*buf]) {
             buf++;
         }
@@ -43,7 +46,7 @@ static str_explode(const char *ifs, char *buf, char *field[], int n) {
         field[i++] = buf;
 
         if (i >= n) { /* Process the last field. */
-            buf += strlen(buf) - 1;
+            buf += strlen((char *)buf) - 1;
             while (ifs[*buf]) {
                 --buf;
             }
@@ -102,7 +105,7 @@ int conf_init(conf_t *conf, const char *filename) {
     char buf[MAX_LINE];
     conf_entry_t *pentry;
     conf_entry_t **ptemp;
-    char *field[2];
+    unsigned char *field[2];
 
     if (!(fp = fopen(filename, "r"))) {
         perror("fopen failed");
@@ -125,15 +128,16 @@ int conf_init(conf_t *conf, const char *filename) {
             buf[n - 1] = '\0';
         }
 
-        if (*buf != '#' && str_explode(NULL, buf, field, 2) == 2) {
+        if (*buf != '#' && str_explode(NULL, 
+                    (unsigned char*)buf, field, 2) == 2) {
             pentry = (conf_entry_t*)malloc(sizeof(conf_entry_t));
             if (!pentry) {
                 fprintf(stderr, "malloc failed\n");
                 ret = -1;
                 goto error;
             }
-            pentry->key = strdup(field[0]);
-            pentry->value = strdup(field[1]);
+            pentry->key = strdup((char *)field[0]);
+            pentry->value = strdup((char *)field[1]);
 
             if (conf->size == conf->slots) {
                 ptemp = (conf_entry_t **)realloc(conf->list, 
@@ -208,16 +212,29 @@ char * conf_get_str_value(conf_t *conf, const char *key,
     return def;
 }
 
-#ifdef CONF_TEST
+#ifdef conf_TEST
 int main(int argc, char *argv[]) {
     conf_t   conf;
+    int i;
+//    char test[] = "a#sys1.dev.corp.qihoo.net#1#fenggu_test#6#>#1#2#0.1";
+    unsigned char test[] = "a#votdb1.ipt.dxt.qihoo.net#160#add_agent_mon#25#ROOT_URATE#>#3#1#6#0#根分区使用率";
+    unsigned char *field[9];
+/*
     if (conf_init(&conf, argv[1]) != 0) {
         fprintf(stderr, "conf_init error\n");
         exit(1);
     }
-
     conf_dump(&conf);
     conf_free(&conf);
+*/
+    if (str_explode("#", test, field, 12) != 12) {
+        fprintf(stderr, "str_explode failed");
+        exit(1);
+    }
+
+    for (i = 0; i < 12; i++) {
+        printf("%d:%s\n", i, field[i]);
+    }
     exit(0);
 }
-#endif /* CONF_TEST */
+#endif /* conf_TEST */

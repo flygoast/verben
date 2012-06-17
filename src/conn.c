@@ -12,6 +12,7 @@
 #include "anet.h"
 #include "shmq.h"
 #include "ae.h"
+#include "notifier.h"
 
 #define IOBUF_SIZE      4096
 #define MAX_PROT_LEN    4096
@@ -204,7 +205,7 @@ static void notifier_handler(ae_event_loop *el, int fd,
     }
 }
 
-void conn_process_cycle(const void *data) {
+void conn_process_cycle(void *data) {
     int notifier = notifier_read_fd();
     vb_process = VB_PROCESS_CONN;
     clients = dlist_init();
