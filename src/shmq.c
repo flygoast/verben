@@ -9,7 +9,7 @@
 #include "atomic.h"
 #define PTHREAD_LOCK_MODE
 #include "lock.h"
-#include "shm_queue.h"
+#include "shmq.h"
 
 #define CYCLE_WAIT_NANO_SEC 2000000 /* 2 minisecond */
 #define SHMQ_BLK(q, off)    (shmq_block_t*)((char*)q->addr+(off))
