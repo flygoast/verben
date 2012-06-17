@@ -13,3 +13,6 @@ not to care it.
 
 `verben' comes from the middle partion of `server bench', which is the
 predecessor of `verben'.
+
+In `plugins' directories, there are some plugin demos. You can refer
+them to write your business code.
