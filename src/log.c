@@ -31,11 +31,11 @@
 #define LOG_PATH_MAX        1024 /* TODO */
 
 static char *log_level_text[] = {
-    "FATAL", 
-    "ERROR", 
+    "FATAL  ", 
+    "ERROR  ", 
     "WARNING", 
-    "NOTICE", 
-    "DEBUG" 
+    "NOTICE ", 
+    "DEBUG  " 
 };
 
 static char *log_buffer = MAP_FAILED;
