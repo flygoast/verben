@@ -1,79 +1,97 @@
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <assert.h>
 #include <errno.h>
 #include <time.h>
 #include <sys/mman.h>
 #include "atomic.h"
-#define PTHREAD_LOCK_MODE   /* for lock_t */
+#define PTHREAD_LOCK_MODE
 #include "lock.h"
-#include "shmq.h"
+#include "shm_queue.h"
 
-#define CYCLE_WAIT_NANO_SEC	200000 /* 0.2 second */
-#define SHMQ_HEAD_BLK(q)    (shmq_block_t*)((char*)q->addr+q->addr->head)
-#define SHMQ_TAIL_BLK(q)    (shmq_block_t*)((char*)q->addr+q->addr->tail)
+#define CYCLE_WAIT_NANO_SEC 2000000 /* 2 minisecond */
+#define SHMQ_BLK(q, off)    (shmq_block_t*)((char*)q->addr+(off))
 
 /* shmq block type */
-#define DAT_BLOCK   0
-#define PAD_BLOCK   1
+#if __WORDSIZE == 32 /* 32 bit machine */
+#define PAD_BLOCK       0x80000000
+#define MAX_BLK_SIZE    0x7FFFFFFF
+#elif __WORDSIZE == 64  /* 64 bit machine */
+#define PAD_BLOCK       0x8000000000000000
+#define MAX_BLK_SIZE    0x7FFFFFFFFFFFFFFF
+#else
+#error "Invalid word size."
+#endif /* __WORDSIZE */
 
-#define SEM_LOCK(l,flag)    do { \
+#define OPT_LOCK(l, flag)  do { \
     if ((l) && (flag & SHMQ_LOCK)) { \
         LOCK_LOCK(l); \
     } \
 } while (0)
 
-#define SEM_UNLOCK(l,flag)  do { \
+#define OPT_UNLOCK(l, flag) do { \
     if ((l) && (flag & SHMQ_LOCK)) { \
         LOCK_UNLOCK(l); \
     } \
 } while (0)
 
+#define SHMQ_ALIGN(n) \
+    (((n)+(sizeof(struct shmq_block)-1))&~(sizeof(struct shmq_block)-1))
 
-/* volatile to avoid cache of head and tail pointer */
 typedef struct shmq_header {
-    volatile int head;  /* offset of queue head to the addr of shm */
-    volatile int tail;  /* offset of queue tail to the addr of shm */
-    atomic_t blk_cnt;   /* block count in the queue */
-} __attribute__((packed)) shmq_header_t;
+    volatile off_t  head;   /* offset of queue head to the addr of shm */
+    volatile off_t  tail;   /* offset of queue tail to the addr of shm */
+    atomic_t        blk_cnt;    /* block count in the queue. */
+    lock_t          lock;
+} shmq_header_t;
 
 typedef struct shmq_block {
-    unsigned int    length;     /* the total length of the block */
-    char            type;
-    char            data[0];
-} __attribute__((packed)) shmq_block_t;
+    uintptr_t   size;       /* the lowest bit used to indicate type */
+    char        data[0];    /* stub for transmited data */
+} shmq_block_t;
 
 struct shm_queue {
     shmq_header_t   *addr;
-    unsigned int    length;
-    lock_t          lock;   /* A lock for asynchronous */
+    off_t           start;
+    size_t          size;
 };
 
-/* Initialize a shared memory queue passed by 'q'. */
-int shmq_init(shmq_t *q, int length) {
-    LOCK_INIT(&q->lock);
+static int shmq_stop = 0;
 
-    assert(q && length > 0);
-    q->length = length;
-    q->addr = (shmq_header_t*)mmap(NULL, length, PROT_READ|PROT_WRITE,
-        MAP_SHARED|MAP_ANONYMOUS, -1, 0);
-    if (q->addr == MAP_FAILED) {
-        return -1;
-    }
-    q->addr->head = sizeof(shmq_header_t);
-    q->addr->tail = sizeof(shmq_header_t);
+static int shmq_header_init(shmq_t *q) {
+    LOCK_INIT(&q->addr->lock);
+    q->addr->head = q->start;
+    q->addr->tail = q->start;
     atomic_set(&(q->addr->blk_cnt), 0);
     return 0;
 }
 
-/* Allocate a shared memory queue, initialize and return it. */
-shmq_t *shmq_create(int length) {
-    shmq_t *q = (shmq_t*)malloc(sizeof(*q));
-    if (!q) {
-        return NULL;
-    }
+void shmq_stop_wait() {
+    shmq_stop = 1;
+}
 
-    if (shmq_init(q, length) != 0) {
+/* Initialize a shared memory queue indicated by 'q' */
+int shmq_init(shmq_t *q, size_t sz) {
+    assert(q && (sz > 0));
+    sz = SHMQ_ALIGN(sz);
+    q->addr = (shmq_header_t*)mmap(NULL, sz, PROT_READ|PROT_WRITE,
+            MAP_SHARED|MAP_ANONYMOUS, -1, 0);
+    if (q->addr == MAP_FAILED) {
+        return -1;
+    }
+    q->size = sz;
+    q->start = SHMQ_ALIGN(sizeof(shmq_header_t));
+    return shmq_header_init(q);
+}
+
+/* Allocate a shared memory queue, initialize and return it. */
+shmq_t *shmq_create(size_t sz) {
+    shmq_t *q = (shmq_t*)malloc(sizeof(*q));
+    assert(q);
+
+    if (shmq_init(q, sz) != 0) {
         free(q);
         return NULL;
     }
@@ -82,12 +100,12 @@ shmq_t *shmq_create(int length) {
 
 void shmq_destroy(shmq_t *q) {
     assert(q);
-    if (q->addr != NULL) {
-        munmap(q->addr, q->length);
-        q->addr = NULL;
+    LOCK_DESTROY(&q->addr->lock);
+    if (q->addr != MAP_FAILED) {
+        munmap(q->addr, q->size);
+        q->addr = MAP_FAILED;
+        q->size = 0;
     }
-
-    LOCK_DESTROY(&q->lock);
 }
 
 void shmq_free(shmq_t *q) {
@@ -96,166 +114,181 @@ void shmq_free(shmq_t *q) {
     free(q);
 }
 
-/* Adjust the head position to hold entire the block.
-   When adjust succeeded or no need to adjust, 0  was
-   returned, -1 was returned when the queue is full. */
-static int shmq_adjust_head(shmq_t *q, int length) {
-    int tail = q->addr->tail;
-    int head = q->addr->head;
-    shmq_block_t *padding;
-    int surplus = q->length - head;
+int shmq_push(shmq_t *q, void *data, size_t len, int flag) {
+    off_t head, tail;
+    struct timespec ts;
+    shmq_block_t *blk;
+    int req_size = SHMQ_ALIGN(sizeof(shmq_block_t) + len);
+    ts.tv_sec = 0;
+    ts.tv_nsec = CYCLE_WAIT_NANO_SEC;
+    assert(req_size < MAX_BLK_SIZE);
 
-    /* queue have not adequate space at the bottom of 
-       the memory buffer to hold the block. */
-    if (surplus < length) {
-        if (tail == sizeof(shmq_header_t) || tail > head) {
-            /* The queue is full. */
-            return -1;
-        } else if (surplus < sizeof(shmq_block_t)) {
-            /* Have not adequate space to add a padding.
-               Move head to the top of the buffer. */
-            q->addr->head = sizeof(shmq_header_t);
-        } else {
-            /* Add a padding */
-            padding = SHMQ_HEAD_BLK(q);
-            padding->type = PAD_BLOCK;
-            padding->length = surplus;
-            q->addr->head = sizeof(shmq_header_t);
+    OPT_LOCK(&q->addr->lock, flag);    
+
+shmq_push_again:
+    if (shmq_stop) {
+        return -2;
+    }
+
+    head = q->addr->head;
+    tail = q->addr->tail;
+
+    if (tail == q->size) tail = q->start;
+
+    if (tail >= head) {
+        if (tail + req_size < q->size ||
+                (head != q->start && tail + req_size == q->size)) {
+            /* Not to make tail and head to be equal. It will
+             * conflict with the empty situation. */
+            goto shmq_push_success;
         }
-    }
-    return 0;
-}
 
-static void shmq_adjust_tail(shmq_t *q) {
-    shmq_block_t *padding;
+        if (q->start + req_size >= head) {
+            /* No space to hold this block. */
+            if (flag & SHMQ_WAIT) {
+                nanosleep(&ts, NULL);
+                goto shmq_push_again;
+            }
+            goto shmq_push_error;
+        }
 
-    if (q->addr->head >= q->addr->tail) {
-        /* No need to adjust tail position. */
-        return;
-    }
+        /* add a pad block */
+        blk = SHMQ_BLK(q, tail);
+        blk->size = (q->size - q->addr->tail) | PAD_BLOCK;
+        q->addr->tail = q->start;
+        goto shmq_push_success;
+    } 
 
-    padding = SHMQ_TAIL_BLK(q);
-    if ((q->length - q->addr->tail < sizeof(shmq_block_t)) ||
-            padding->type == PAD_BLOCK) {
-        q->addr->tail = sizeof(shmq_header_t);
-    }
-    return;
-}
+    if (tail < head) {
+        if (tail + req_size < head) {
+            /* can hold the block */
+            goto shmq_push_success;
+        }
 
-/* Enqueue at head end, and dequeue at tail end. */
-static int shmq_push_wait(shmq_t *q, int length, int flag) {
-    struct timespec tv = {0, CYCLE_WAIT_NANO_SEC};
-
-    /* Adjust the head position to the position from where
-       the queue can contain the entire block(containing
-       the data). */
-    while (shmq_adjust_head(q, length) < 0) {
+        /* no space to hold the block */
         if (flag & SHMQ_WAIT) {
-            nanosleep(&tv, NULL);
-        } else {
-            return -1;
+            nanosleep(&ts, NULL);
+            goto shmq_push_again;
         }
+        goto shmq_push_error;
     }
 
-push_wait_again:
-    while (q->addr->tail > q->addr->head && 
-            q->addr->tail < q->addr->head + length + 1) {
-        if (flag & SHMQ_WAIT) {
-            nanosleep(&tv, NULL);
-        } else {
-            return -1;
-        }
-    }
-
-    /* Adjust the head position again. */
-    while (shmq_adjust_head(q, length) < 0) {
-        if (flag & SHMQ_WAIT) {
-            nanosleep(&tv, NULL);
-        } else {
-            return -1;
-        }
-    }
-
-    if (q->addr->tail > q->addr->head && 
-            q->addr->tail < q->addr->head + length + 1) {
-        goto push_wait_again;
-    }
-
+shmq_push_success:
+    blk = SHMQ_BLK(q, q->addr->tail);
+    blk->size = len + sizeof(shmq_block_t);
+    memcpy(blk->data, data, len);
+    atomic_inc(&q->addr->blk_cnt);
+    q->addr->tail += req_size;
+    OPT_UNLOCK(&q->addr->lock, flag);
     return 0;
+
+shmq_push_error:
+    OPT_UNLOCK(&q->addr->lock, flag);
+    return -1;
 }
 
-static int shmq_pop_wait(shmq_t *q, int flag) {
-    struct timespec tv = {0, CYCLE_WAIT_NANO_SEC};
 
-    /* Adjust tail position. */
-    shmq_adjust_tail(q);
-
-pop_wait_again:
-    while (q->addr->tail == q->addr->head) {
-        if ((flag & SHMQ_WAIT)) {
-            nanosleep(&tv, NULL);
-        } else {
-            return -1;
-        }
-    }
-
-    shmq_adjust_tail(q);
-    if (q->addr->tail == q->addr->head) {
-        goto pop_wait_again;
-    }
-    return 0;
-}
-
-int shmq_push(shmq_t *q, void *data, int len, int flag) {
-    int ret = -1;
-    int real_len = sizeof(shmq_block_t) + len;
-
-    SEM_LOCK(&q->lock, flag);
-
-    if (shmq_push_wait(q, real_len, flag) == 0) {
-        shmq_block_t *next_blk = SHMQ_HEAD_BLK(q);
-        next_blk->type = DAT_BLOCK;
-        next_blk->length = real_len;
-        memcpy((void*)((char*)next_blk + sizeof(shmq_block_t)),
-            data, len);
-        q->addr->head += real_len;
-        atomic_inc(&q->addr->blk_cnt);
-        ret = 0;
-    }
-
-    SEM_UNLOCK(&q->lock, flag);
-    return ret;
-}
-
-/* The caller should to free the memory returned by 'retdata'. */
+/* The caller should free the memory returned by 'retdata'. */
 int shmq_pop(shmq_t *q, void **retdata, int *len, int flag) {
-    shmq_block_t *cur_blk;
-    int ret = -1;
+    off_t head, tail;
+    shmq_block_t *blk;
+    struct timespec ts;
+    ts.tv_sec = 0;
+    ts.tv_nsec = CYCLE_WAIT_NANO_SEC;
+
     assert(retdata && len);
     *retdata = NULL;
+    
+    OPT_LOCK(&q->addr->lock, flag);
 
-    SEM_LOCK(&q->lock, flag);
-
-    if (shmq_pop_wait(q, flag) == 0) {
-        cur_blk = SHMQ_TAIL_BLK(q);
-        *len = cur_blk->length - sizeof(shmq_block_t);
-        *retdata = malloc(*len);
-        if (!*retdata) {
-            goto shmq_pop_end;
-        }
-        memcpy(*retdata, ((char*)cur_blk + sizeof(shmq_block_t)), *len);
-        atomic_dec(&q->addr->blk_cnt);
-        q->addr->tail += cur_blk->length;
-        ret = 0;
+shmq_pop_again:
+    if (shmq_stop) {
+        return -2;
     }
-shmq_pop_end:
-    SEM_UNLOCK(&q->lock, flag);
-    return ret;
+
+    tail = q->addr->tail;
+    head = q->addr->head;
+    if (head == q->size) head = q->start;
+
+    if (head == tail) {
+        if (flag & SHMQ_WAIT) {
+            nanosleep(&ts, NULL);
+            goto shmq_pop_again;
+        }
+        goto shmq_pop_error;
+    }
+
+    if (head > tail) {
+        blk = SHMQ_BLK(q, head);
+        if (blk->size & PAD_BLOCK) {
+            q->addr->head = q->start;
+            goto shmq_pop_again;
+        }
+        goto shmq_pop_success;
+    }
+    
+    if (head < tail) {
+        blk = SHMQ_BLK(q, head);
+        if (blk->size & PAD_BLOCK) {
+            q->addr->head = q->start;
+            goto shmq_pop_again;
+        }
+        goto shmq_pop_success;
+    }
+
+shmq_pop_success:
+    *len = blk->size - sizeof(shmq_block_t);
+    *retdata = malloc(*len);
+    if (*retdata == NULL) {
+        goto shmq_pop_error;
+    }
+    memcpy(*retdata, blk->data, *len);
+    atomic_dec(&q->addr->blk_cnt);
+    q->addr->head += SHMQ_ALIGN(blk->size & MAX_BLK_SIZE);
+    OPT_UNLOCK(&q->addr->lock, flag);
+    return 0;
+
+shmq_pop_error:
+    OPT_UNLOCK(&q->addr->lock, flag);
+    return -1;
 }
 
+/* gcc shmq.c lock.c -DSHMQ_TEST_MAIN -I../inc -lpthread -g */
 #ifdef SHMQ_TEST_MAIN
 #include <stdio.h>
 #include <unistd.h>
+
+void shmq_dump(shmq_t *q) {
+    off_t off;
+    shmq_block_t *blk;
+
+    if (atomic_read(&q->addr->blk_cnt) == 0) {
+        printf("[]\n");
+        return;
+    }
+    
+    printf("*");
+    off = q->addr->head;
+    while (1) {
+        blk = (shmq_block_t *)((char*)q->addr + off);
+        if (blk->size & PAD_BLOCK) {
+            off += SHMQ_ALIGN(blk->size & MAX_BLK_SIZE) ;
+            printf("[PAD]");
+        } else {
+            printf("[%s]", blk->data);
+            off += SHMQ_ALIGN(blk->size);
+        }
+
+        if (off == q->size) {
+            off = q->start;
+        }
+
+        if (off == q->addr->tail) {
+            break;
+        }
+    }
+    printf("*\n");
+}
 
 int main(int argc, char *argv[]) {
     int i = 0;
@@ -271,12 +304,14 @@ int main(int argc, char *argv[]) {
     memcpy(st.name, "A TEST", 7);
     st.id = 0xFFFFFFFF;
 
-    q = shmq_create(1 << 20);
+    q = shmq_create(1 << 10);
     assert(q);
     assert(shmq_push(q, test, strlen(test) + 1, SHMQ_WAIT) == 0);
     assert(shmq_push(q, &st, sizeof(st), SHMQ_WAIT) == 0);
     assert(shmq_push(q, test, strlen(test) + 1, SHMQ_WAIT) == 0);
     assert(shmq_push(q, test, strlen(test) + 1, SHMQ_WAIT) == 0);
+    shmq_dump(q);
+
     assert(shmq_pop(q, &result, &len, SHMQ_WAIT) == 0);
     printf("%s\n", (char *)result);
     free(result);
@@ -294,20 +329,22 @@ int main(int argc, char *argv[]) {
 
     printf("shmq_header_size:%d, sizeof(st):%d, block size:%d\n", 
         sizeof(shmq_header_t), sizeof(st), sizeof(shmq_block_t));
-    q = shmq_create(110);
+
+    q = shmq_create(137);
     assert(shmq_push(q, &st, sizeof(st), SHMQ_WAIT) == 0);
     assert(shmq_push(q, &st, sizeof(st), SHMQ_WAIT) == 0);
     assert(shmq_push(q, &st, sizeof(st), SHMQ_WAIT) == 0);
     /* assert(shmq_push(q, &st, sizeof(st), SHMQ_WAIT) == -1); */
     shmq_free(q);
 
-    q = shmq_create(1 << 20);
+    q = shmq_create(1 << 7);
     while (i++ < 5) {
         pid = fork();
         if (pid < 0) {
             fprintf(stderr, "fork failed:%s\n", strerror(errno));
             exit(1);
         } else if (pid == 0) {
+            printf("PID:%d, PPID:%d\n", getpid(), getppid());
             while (1) {
                 if (shmq_pop(q, &result, &len, SHMQ_WAIT | SHMQ_LOCK) < 0) {
                     fprintf(stderr, "shmq_pop failed\n");
@@ -318,6 +355,7 @@ int main(int argc, char *argv[]) {
                     ((struct test_struct*)result)->id);
                 free(result);
             }
+            printf("something wrong\n");
             exit(0);
         }
     }
