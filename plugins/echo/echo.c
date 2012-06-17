@@ -5,7 +5,7 @@
 #include "verben.h"
 #include "plugin.h"
 
-int handle_init(int proc_type) {
+int handle_init(void *cycle, int proc_type) {
     switch (proc_type) {
         case VB_PROCESS_MASTER:
             return 0;
