@@ -32,12 +32,9 @@ void worker_process_cycle(const void *data) {
             exit(0);
         }
 
-        if (shmq_pop(recv_queue, (void **)&msg, &msg_len, SHMQ_LOCK) != 0) {
-            struct timespec tv;
-            tv.tv_sec = 0;
-            tv.tv_nsec = 2000000;
+        if (shmq_pop(recv_queue, (void **)&msg, &msg_len, 
+                    SHMQ_WAIT|SHMQ_LOCK) != 0) {
             if (msg) free(msg);
-            nanosleep(&tv, NULL);
             continue;
         }
 

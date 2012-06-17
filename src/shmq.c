@@ -127,7 +127,7 @@ int shmq_push(shmq_t *q, void *data, size_t len, int flag) {
 
 shmq_push_again:
     if (shmq_stop) {
-        return -2;
+        goto shmq_pop_error;
     }
 
     head = q->addr->head;
@@ -203,7 +203,7 @@ int shmq_pop(shmq_t *q, void **retdata, int *len, int flag) {
 
 shmq_pop_again:
     if (shmq_stop) {
-        return -2;
+        goto shmq_pop_error;
     }
 
     tail = q->addr->tail;
