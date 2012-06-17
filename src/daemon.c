@@ -10,7 +10,7 @@
 #include <sys/prctl.h>
 #endif /* __linux__ */
 
-#define MAXFDS      10000
+#define MAXFDS      50000
 
 /* To change the process title in Linux and Solaris we have to
    set argv[1] to NULL and to copy the title to the same place

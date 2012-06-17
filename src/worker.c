@@ -36,7 +36,7 @@ void worker_process_cycle(void *data) {
             if (dll.handle_fini) {
                 dll.handle_fini(data, vb_process);
             }
-            DEBUG_LOG("Process[%d] will exit\n", getpid());
+            DEBUG_LOG("Process[%d] will exit", getpid());
             exit(0);
         }
 
@@ -50,9 +50,12 @@ void worker_process_cycle(void *data) {
 
         ret = dll.handle_process((char*)msg + sizeof(shm_msg),
                 msg_len - sizeof(shm_msg),
-                &retdata, &retlen, &msg->sk);
+                &retdata, &retlen, msg->remote_ip, msg->remote_port);
         temp_msg = (shm_msg*)realloc(msg, sizeof(shm_msg) + retlen);
-        assert(temp_msg);
+        if (!temp_msg) {
+            FATAL_LOG("Out of memory");
+            exit(0);
+        }
         memcpy((char *)temp_msg + sizeof(shm_msg), retdata, retlen);
 
         if (shmq_push(send_queue, temp_msg, 

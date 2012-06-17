@@ -64,7 +64,7 @@ void * handle;
 dll_func_t dll;
 
 /* conf */
-conf_t   conf;
+conf_t   g_conf;
 char *conf_file;
 
 sig_atomic_t vb_reap;
@@ -355,22 +355,22 @@ static void master_process_cycle() {
     }
 
     if (!(recv_queue = shmq_create(
-                conf_get_int_value(&conf, "shmq_recv", 1 << 20)))) {
+                conf_get_int_value(&g_conf, "shmq_recv", 1 << 20)))) {
         FATAL_LOG("Create shared memory queue for receiving failed");
         exit(1);
     }
 
     if (!(send_queue = shmq_create(
-                conf_get_int_value(&conf, "shmq_send", 1 << 20)))) {
+                conf_get_int_value(&g_conf, "shmq_send", 1 << 20)))) {
         FATAL_LOG("Create shared memory queue for sending failed");
         exit(1);
     }
 
-    create_processes(conn_process_cycle, (void *)&conf, 
+    create_processes(conn_process_cycle, (void *)&g_conf, 
             PROG_NAME":[conn]", 1, VB_PROCESS_RESPAWN);
-    create_processes(worker_process_cycle, (void *)&conf, 
+    create_processes(worker_process_cycle, (void *)&g_conf, 
             PROG_NAME":[worker]",
-            conf_get_int_value(&conf, "worker_num", 4),
+            conf_get_int_value(&g_conf, "worker_num", 4),
             VB_PROCESS_RESPAWN);
 
     /* Close notifier between workers and conn process. */
@@ -388,7 +388,7 @@ static void master_process_cycle() {
 
         if (!live && vb_quit) {
             if (dll.handle_fini) {
-                dll.handle_fini(&conf, vb_process);
+                dll.handle_fini(&g_conf, vb_process);
             }
 
             /* release relevant resources */
@@ -466,7 +466,7 @@ int main(int argc, char *argv[]) {
 
     parse_options(argc, argv);
     if (!conf_file) conf_file = "./verben.conf";
-    if (conf_init(&conf, conf_file) != 0) {
+    if (conf_init(&g_conf, conf_file) != 0) {
         BOOT_FAILED("Load conf file [%s]", conf_file);
     }
     BOOT_OK("Load conf file [%s]", conf_file);
@@ -479,12 +479,12 @@ int main(int argc, char *argv[]) {
     }
     BOOT_OK("Initialize signal handlers");
 
-    if (log_init(conf_get_str_value(&conf, "log_dir", "/tmp"),
-            conf_get_str_value(&conf, "log_name", PROG_NAME".log"),
-            conf_get_int_value(&conf, "log_level", LOG_LEVEL_ALL),
-            conf_get_int_value(&conf, "log_size", LOG_FILE_SIZE),
-            conf_get_int_value(&conf, "log_num", LOG_FILE_NUM),
-            conf_get_int_value(&conf, "log_multi", LOG_MULTI_NO)) < 0) {
+    if (log_init(conf_get_str_value(&g_conf, "log_dir", "/tmp"),
+            conf_get_str_value(&g_conf, "log_name", PROG_NAME".log"),
+            conf_get_int_value(&g_conf, "log_level", LOG_LEVEL_ALL),
+            conf_get_int_value(&g_conf, "log_size", LOG_FILE_SIZE),
+            conf_get_int_value(&g_conf, "log_num", LOG_FILE_NUM),
+            conf_get_int_value(&g_conf, "log_multi", LOG_MULTI_NO)) < 0) {
         BOOT_FAILED("Initialize log file");
     }
     BOOT_OK("Initialize log file");
@@ -496,25 +496,27 @@ int main(int argc, char *argv[]) {
     BOOT_OK("Set self to be leader of the process group");
 
     /* load .so file */
-    so_name = conf_get_str_value(&conf, "so_file", NULL);
+    so_name = conf_get_str_value(&g_conf, "so_file", NULL);
     if (load_so(&handle, syms, so_name) < 0) {
         BOOT_FAILED("load so file %s", so_name ? so_name : "(NULL)");
     }
     BOOT_OK("load so file %s", so_name ? so_name : "(NULL)");
 
-    /* Daemonize */
-    /* TODO */
+    daemonize();
+    rlimit_reset();
 
     /* Invoke the hook in master. */
     if (dll.handle_init) {
         if (dll.handle_init(NULL, vb_process) != 0) {
-            BOOT_FAILED("Invoke hook handle_init in master");
+            FATAL_LOG("Invoke hook handle_init in master failed");
+            exit(1);
         }
     }
 
     saved_argv = daemon_argv_dup(argc, argv);
     if (!saved_argv) {
-        BOOT_FAILED("Duplicate argv");
+        FATAL_LOG("Duplicate argv failed");
+        exit(1);
     }
 
     daemon_set_title("%s:[master]", PROG_NAME);

@@ -1,5 +1,4 @@
 /* SDSLib, A C dynamic strings library. */
-
 #define SDS_ABORT_ON_OOM
 
 #include <stdio.h>
