@@ -3,33 +3,23 @@
 
 #include "ae.h"
 
-typedef struct sock_info {
-    int         sockfd;
-    int         type;
-    long long   recv_tm;
-    long long   send_tm;
-    u_int       local_ip;
-    u_short     local_port;
-    u_int       remote_ip;
-    u_short     remote_port;
-} sock_info;
-
 typedef struct client_conn {
     int     fd;
+    int     refcount;   /* number of messages havn't been processed */ 
+    char    *remote_ip;
+    int     remote_port;
     int     recv_prot_len;
-    int     accept_fd;
     char    *sendbuf;
     char    *recvbuf;
-    sock_info   sk;
+    time_t  access_time;
 } client_conn;
 
 typedef struct shm_msg {
     client_conn *cli;
-    sock_info   sk;
-    u_int       accept_fd;
+    char        remote_ip[16];
+    int         remote_port;
     char        data[0];
-} __attribute__((packed)) shm_msg;
-
+} shm_msg;
 
 extern ae_event_loop    *ael;
 void conn_process_cycle(void *data);

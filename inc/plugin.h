@@ -14,12 +14,13 @@ void handle_fini(void *cycle, int proc_type);
    function should allocate memory from heap, and return
    the address in `sendbuf' and its length in 'len'. Otherwise,
    set `sendbuf' to NULL. */
-int handle_open(char **sendbuf, int *len, const sock_info* sk);
+int handle_open(char **sendbuf, int *len, const char *remote_ip, int port);
 
-void handle_close(const sock_info *sk);
-int handle_input(char*recvbuf, int recvlen, const sock_info* sk);
+void handle_close(const char *remote_ip, int port);
+int handle_input(char*recvbuf, int recvlen, 
+        const char *remote_ip, int port);
 int handle_process(char *recvbuf, int recvlen, 
-        char **sendbuf, int *sendlen, const sock_info* sk);
+        char **sendbuf, int *sendlen, const char *remote_ip, int port);
 
 __END_DECLS
 #endif /* __PLUGIN_H_INCLUDED__ */

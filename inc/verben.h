@@ -3,6 +3,7 @@
 
 #include <signal.h>
 #include "conn.h"
+#include "conf.h"
 #include "dll.h"
 #include "shmq.h"
 
@@ -13,10 +14,10 @@
 typedef struct dll_func_struct {
     int (*handle_init)(void *, int);
     void (*handle_fini)(void *, int);
-    int (*handle_open)(char **, int *, const sock_info*);
-    void (*handle_close)(const sock_info*);
-    int (*handle_input)(const char*, int, const sock_info*);
-    int (*handle_process)(char *, int, char **, int *, const sock_info*);
+    int (*handle_open)(char **, int *, char *, int);
+    void (*handle_close)(char *, int);
+    int (*handle_input)(const char*, int, char *, int);
+    int (*handle_process)(char *, int, char **, int *, char *, int);
 } dll_func_t;
 
 extern int vb_process;
