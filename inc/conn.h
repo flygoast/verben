@@ -19,7 +19,7 @@ typedef struct shm_msg {
     char        remote_ip[16];
     int         remote_port;
     char        data[0];
-} shm_msg;
+} __attribute__((packed)) shm_msg;
 
 extern ae_event_loop    *ael;
 void conn_process_cycle(void *data);

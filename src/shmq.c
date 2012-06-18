@@ -121,7 +121,6 @@ int shmq_push(shmq_t *q, void *data, size_t len, int flag) {
     int req_size = SHMQ_ALIGN(sizeof(shmq_block_t) + len);
     ts.tv_sec = 0;
     ts.tv_nsec = CYCLE_WAIT_NANO_SEC;
-    assert(req_size < MAX_BLK_SIZE);
 
     OPT_LOCK(&q->addr->lock, flag);    
 

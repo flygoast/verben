@@ -67,7 +67,7 @@ static int server_cron(ae_event_loop *el, long long id, void *privdate) {
 
     while ((node = dlist_next(&iter))) {
         cli = node->value;
-        if (cli->refcount == 0 && 
+        if (cli->refcount == 0 && client_timeout &&
                 unix_clock - cli->access_time > client_timeout) {
             reduce_client_refcount(cli);
         }
@@ -269,7 +269,6 @@ static void notifier_handler(ae_event_loop *el, int fd,
     shm_msg *msg;
     int len;
     client_conn *cli;
-    char *buf;
 
     AE_NOTUSED(el);
     AE_NOTUSED(mask);
@@ -280,8 +279,8 @@ static void notifier_handler(ae_event_loop *el, int fd,
     while (shmq_pop(send_queue, (void**)&msg, &len, 0) == 0) {
         cli = msg->cli;
         if (reduce_client_refcount(cli) >= 0) {
-            buf = (char*)msg + sizeof(shm_msg);
-            cli->sendbuf = sdscatlen(cli->sendbuf, buf, len - sizeof(shm_msg));
+            cli->sendbuf = sdscatlen(cli->sendbuf, msg->data, 
+                    len - sizeof(shm_msg));
             if (ae_create_file_event(el, cli->fd, AE_WRITABLE, 
                     write_to_client, cli) == AE_ERR) {
                 ERROR_LOG("Create write file event failed on fd %d",
