@@ -3,17 +3,22 @@ CC = gcc
 CFLAGS  = $(DEBUG) -Wall
 LIB 	= -ldl -rdynamic -lpthread
 INC     = -I../inc
-OO	= verben.o dll.o log.o conf.o lock.o shmq.o notifier.o \
+VERBENOO = verben.o dll.o log.o conf.o lock.o shmq.o notifier.o \
       anet.o dlist.o worker.o conn.o ae.o sds.o daemon.o
-TARGETS = verben
+BENCHOO = benchmark.o dlist.o ae.o sds.o anet.o
+VERBEN = verben
+BENCH = benchmark
 
-all: $(TARGETS) $(BIN)
+all: $(VERBEN) $(BENCH)
 
-$(TARGETS): $(OO)
-	$(CC) $(CFLAGS) $(OO) -o $@ $(LIBDIR) $(LIB)
+$(VERBEN): $(VERBENOO)
+	$(CC) $(CFLAGS) $(VERBENOO) -o $@ $(LIBDIR) $(LIB)
+$(BENCH): $(BENCHOO)
+	$(CC) $(CFLAGS) $(BENCHOO) -o $@ $(LIBDIR) $(LIB)
 
 install:
-	install $(TARGETS) ../bin/
+	install $(VERBEN) ../bin/
+	install $(BENCH) ../bin/
 
 #deps
 shmq.o: lock.c shmq.c
@@ -23,4 +28,5 @@ shmq.o: lock.c shmq.c
 
 clean:
 	rm -f *.o
-	rm -f $(TARGETS)
+	rm -f $(VERBEN)
+	rm -f $(BENCH)

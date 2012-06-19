@@ -20,12 +20,9 @@ static struct config {
     int             requests;
     int             requests_issued;
     int             requests_finished;
-    int             keysize;
-    int             datasize;
     int             quiet;
     long long       start;
     long long       total_latency;
-    long long       *latency;
     char            *title;
     dlist           *clients;
 } conf;
@@ -95,6 +92,7 @@ static void read_handler(ae_event_loop *el, int fd, void *priv, int mask) {
     c->read += nread;
     if (c->read == sdslen(c->obuf)) {
         c->latency = ustime() - c->start;
+        ++conf.requests_finished;
         client_done(c);
     }
 }
@@ -236,7 +234,6 @@ int main(int argc, char **argv) {
     conf.live_clients = 0;
     conf.el = ae_create_event_loop();
     ae_create_time_event(conf.el, 1, show_throughput, NULL, NULL);
-    conf.latency = NULL;
     conf.clients = dlist_init();
     conf.hostip = "127.0.0.1";
     conf.hostport = 8773;
