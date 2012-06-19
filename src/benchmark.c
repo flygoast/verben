@@ -4,7 +4,8 @@
 #include <signal.h>
 #include <errno.h>
 #include <assert.h>
-
+#include <unistd.h>
+#include <sys/time.h>
 #include "ae.h"
 #include "dlist.h"
 #include "sds.h"
@@ -184,7 +185,7 @@ static void free_all_clients() {
 }
 
 static void show_latency_report(void) {
-    float   perc, reqpersec;
+    float reqpersec;
 
     reqpersec = (float)conf.requests_finished 
         / ((float)conf.total_latency / 1000);
