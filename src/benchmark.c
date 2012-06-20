@@ -156,11 +156,19 @@ static void create_missing_clients(client *c) {
     int n = 0;
     while (conf.live_clients < conf.num_clients) {
         create_client(c->obuf, sdslen(c->obuf));
+        /* listen backlog is quite limited on most system */
         if (++n > 64) {
             usleep(50000);
             n = 0;
         }
     }
+}
+
+static void reset_client(client *c) {
+    ae_delete_file_event(conf.el, c->fd, AE_WRITABLE);
+    ae_delete_file_event(conf.el, c->fd, AE_READABLE);
+    ae_create_file_event(conf.el, c->fd, AE_WRITABLE, write_handler, c);
+    c->written = 0;
 }
 
 static void client_done(client *c) {
@@ -170,10 +178,14 @@ static void client_done(client *c) {
         return;
     }
 
-    --conf.live_clients;
-    create_missing_clients(c);
-    ++conf.live_clients;
-    free_client(c);
+    if (conf.keep_alive) {
+        reset_client(c);
+    } else {
+        --conf.live_clients;
+        create_missing_clients(c);
+        ++conf.live_clients;
+        free_client(c);
+    }
 }
 
 static void free_all_clients() {
@@ -196,7 +208,9 @@ static void show_latency_report(void) {
         printf(" %d requests completed in %.2f seconds\n",
                 conf.requests_finished, (float)conf.total_latency/1000);
         printf(" %d parallel clients\n", conf.num_clients);
+        printf(" keep alive: %d\n", conf.keep_alive);
         printf("\n");
+
         printf("%.2f requests per second\n\n", reqpersec);
     } else {
         printf("%s:%.2f requests per second\n\n", conf.title, reqpersec);
@@ -284,6 +298,8 @@ int main(int argc, char **argv) {
     conf.requests = 50000;
     conf.live_clients = 0;
     conf.keep_alive = 1;
+    conf.loop = 0;
+    conf.quiet = 0;
     conf.el = ae_create_event_loop();
     ae_create_time_event(conf.el, 1, show_throughput, NULL, NULL);
     conf.clients = dlist_init();
@@ -304,6 +320,9 @@ int main(int argc, char **argv) {
             " in order to use a lot of clients/requests\n");
     }
 
-    benchmark("QPS benchmark", "hello\r\n", 7);
+    do {
+        benchmark("QPS benchmark", "hello\r\n", 7);
+    } while (conf.loop);
+
     exit(0);
 }

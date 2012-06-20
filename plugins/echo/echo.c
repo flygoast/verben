@@ -20,6 +20,8 @@ int handle_init(void *conf, int proc_type) {
     return -1;
 }
 
+/* This API implementation is optional. */
+/*
 int handle_open(char **sendbuf, int *len, 
         const char *remote_ip, int port) {
     char *msg = "welcome to verben\n";
@@ -31,6 +33,7 @@ int handle_open(char **sendbuf, int *len,
     DEBUG_LOG("Receive a connection from %s:%d", remote_ip, port);
     return 0;
 }
+*/
 
 
 void handle_close(const char *remote_ip, int port) {
