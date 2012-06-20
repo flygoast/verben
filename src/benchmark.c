@@ -169,6 +169,7 @@ static void reset_client(client *c) {
     ae_delete_file_event(conf.el, c->fd, AE_READABLE);
     ae_create_file_event(conf.el, c->fd, AE_WRITABLE, write_handler, c);
     c->written = 0;
+    c->read = 0;
 }
 
 static void client_done(client *c) {
