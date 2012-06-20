@@ -295,7 +295,7 @@ int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);
 
     conf.num_clients = 50;
-    conf.requests = 50000;
+    conf.requests = 10000;
     conf.live_clients = 0;
     conf.keep_alive = 1;
     conf.loop = 0;
