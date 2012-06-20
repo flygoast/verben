@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <assert.h>
 #include <unistd.h>
+#include <getopt.h>
 #include <sys/time.h>
 #include "ae.h"
 #include "dlist.h"
@@ -21,6 +22,8 @@ static struct config {
     int             requests_issued;
     int             requests_finished;
     int             quiet;
+    int             keep_alive;
+    int             loop;
     long long       start;
     long long       total_latency;
     char            *title;
@@ -224,20 +227,83 @@ static int show_throughput(ae_event_loop *el, long long id, void *priv) {
     return 250; /* every 250ms */
 }
 
+static void usage(int status) {
+    puts("Usage: benchmark [-h <host>] [-p <port>] "
+            "[-c <clients>] [-n requests]> [-k <boolean>]\n");
+    puts(" -h <hostname>    server hostname (default 127.0.0.1)");
+    puts(" -p <port>        server port (default 8773)");
+    puts(" -c <clients>     number of parallel connections (default 50)");
+    puts(" -n <requests>    total number of requests (default 10000)");    
+    puts(" -k <boolean>     1 = keep alive, 0 = reconnect (default 1)");
+    puts(" -q               quiet. Just show QPS values");
+    puts(" -l               loop. Run the tests forever");
+    puts(" -H               show help information\n");
+    exit(status);
+}
+
+static void parse_options(int argc, char **argv) {
+    char c;
+    
+    while ((c = getopt(argc, argv, "h:p:c:n:k:qlH")) != -1) {
+        switch (c) {
+        case 'h':
+            conf.hostip = strdup(optarg);
+            break;
+        case 'p':
+            conf.hostport = atoi(optarg);
+            break;
+        case 'c':
+            conf.num_clients = atoi(optarg);
+            break;
+        case 'n':
+            conf.requests = atoi(optarg);
+            break;
+        case 'k':
+            conf.keep_alive = atoi(optarg);
+            break;
+        case 'q':
+            conf.quiet = 1;
+            break;
+        case 'l':
+            conf.loop = 1;
+            break;
+        case 'H':
+            usage(0);
+            break;
+        default:
+            usage(1);
+        }
+    }
+}
 
 int main(int argc, char **argv) {
     signal(SIGHUP, SIG_IGN);
     signal(SIGPIPE, SIG_IGN);
 
     conf.num_clients = 50;
-    conf.requests = 10000;
+    conf.requests = 50000;
     conf.live_clients = 0;
+    conf.keep_alive = 1;
     conf.el = ae_create_event_loop();
     ae_create_time_event(conf.el, 1, show_throughput, NULL, NULL);
     conf.clients = dlist_init();
     conf.hostip = "127.0.0.1";
     conf.hostport = 8773;
     
+    parse_options(argc, argv);
+    
+    if (optind < argc) {
+        usage(1);
+    }
+
+    if (!conf.keep_alive) {
+        puts("WARNING:\n"
+            " keepalive disabled, at linux, you probably need    \n"
+            " 'echo > /proc/sys/net/ipv4/tcp_tw_reuse' and \n"
+            " 'sudo sysctl -w net.inet.tcp.msl=1000' for Mac OS X\n"
+            " in order to use a lot of clients/requests\n");
+    }
+
     benchmark("QPS benchmark", "hello\r\n", 7);
     exit(0);
 }
