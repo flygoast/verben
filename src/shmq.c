@@ -132,7 +132,10 @@ shmq_push_again:
     head = q->addr->head;
     tail = q->addr->tail;
 
-    if (tail == q->size) tail = q->start;
+    if (tail == q->size) {
+        tail = q->start;
+        q->addr->tail = q->start;
+    }
 
     if (tail >= head) {
         if (tail + req_size < q->size ||
@@ -207,7 +210,10 @@ shmq_pop_again:
 
     tail = q->addr->tail;
     head = q->addr->head;
-    if (head == q->size) head = q->start;
+    if (head == q->size) {
+        head = q->start;
+        q->addr->head = q->start;
+    }
 
     if (head == tail) {
         if (flag & SHMQ_WAIT) {
@@ -289,54 +295,25 @@ void shmq_dump(shmq_t *q) {
     printf("*\n");
 }
 
+typedef struct shm_msg {
+    void        *cli;
+    char        remote_ip[16];
+    int         remote_port;
+    char        data[0];
+} __attribute__((packed)) shm_msg;
+
 int main(int argc, char *argv[]) {
     int i = 0;
-    void *result;
+    shm_msg *result;
     int len;
     shmq_t *q;
     pid_t pid;
-    char *test = "Hello world";
-    struct test_struct {
-        char    name[8];
-        int     id;
-    } st;
-    memcpy(st.name, "A TEST", 7);
-    st.id = 0xFFFFFFFF;
+    char *test = "Hello\r\n";
 
-    q = shmq_create(1 << 10);
-    assert(q);
-    assert(shmq_push(q, test, strlen(test) + 1, SHMQ_WAIT) == 0);
-    assert(shmq_push(q, &st, sizeof(st), SHMQ_WAIT) == 0);
-    assert(shmq_push(q, test, strlen(test) + 1, SHMQ_WAIT) == 0);
-    assert(shmq_push(q, test, strlen(test) + 1, SHMQ_WAIT) == 0);
-    shmq_dump(q);
+    q = shmq_create(1048576);
+    shm_msg *msg = (shm_msg *)malloc(sizeof(*msg) + 7);
+    memcpy(msg->data, test, 7);
 
-    assert(shmq_pop(q, &result, &len, SHMQ_WAIT) == 0);
-    printf("%s\n", (char *)result);
-    free(result);
-    assert(shmq_pop(q, &result, &len, SHMQ_WAIT) == 0);
-    printf("%s:0x%X\n", ((struct test_struct*)result)->name,
-            ((struct test_struct*)result)->id);
-    free(result);
-    assert(shmq_pop(q, &result, &len, SHMQ_WAIT) == 0);
-    printf("%s\n", (char*)result);
-    free(result);
-    assert(shmq_pop(q, &result, &len, SHMQ_WAIT) == 0);
-    printf("%s\n", (char *)result);
-    free(result);
-    shmq_free(q);
-
-    printf("shmq_header_size:%d, sizeof(st):%d, block size:%d\n", 
-        sizeof(shmq_header_t), sizeof(st), sizeof(shmq_block_t));
-
-    q = shmq_create(137);
-    assert(shmq_push(q, &st, sizeof(st), SHMQ_WAIT) == 0);
-    assert(shmq_push(q, &st, sizeof(st), SHMQ_WAIT) == 0);
-    assert(shmq_push(q, &st, sizeof(st), SHMQ_WAIT) == 0);
-    /* assert(shmq_push(q, &st, sizeof(st), SHMQ_WAIT) == -1); */
-    shmq_free(q);
-
-    q = shmq_create(1 << 7);
     while (i++ < 5) {
         pid = fork();
         if (pid < 0) {
@@ -345,13 +322,12 @@ int main(int argc, char *argv[]) {
         } else if (pid == 0) {
             printf("PID:%d, PPID:%d\n", getpid(), getppid());
             while (1) {
-                if (shmq_pop(q, &result, &len, SHMQ_WAIT | SHMQ_LOCK) < 0) {
+                if (shmq_pop(q, (void*)&result, &len, SHMQ_WAIT | SHMQ_LOCK) < 0) {
                     fprintf(stderr, "shmq_pop failed\n");
                     exit(1);
                 }
-                printf("[%d]:%s:0x%X\n", getpid(), 
-                    ((struct test_struct*)result)->name,
-                    ((struct test_struct*)result)->id);
+                result->data[6] = '\0';
+                printf("[%d]:%s\n", getpid(), result->data);
                 free(result);
             }
             printf("something wrong\n");
@@ -360,8 +336,11 @@ int main(int argc, char *argv[]) {
     }
     
     while (1) {
-        if (shmq_push(q, &st, sizeof(st), SHMQ_WAIT) < 0) {
+        if (shmq_push(q, msg, sizeof(*msg) + 7, SHMQ_WAIT) < 0) {
             fprintf(stderr, "shmq_push failed\n");
+            printf("start:%ld, head:%d, tail:%d\n", q->start,
+                    q->addr->head,
+                    q->addr->tail);
             exit(1);
         }
     }

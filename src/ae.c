@@ -7,6 +7,7 @@
 
 /* Include the best multiplexing layer supported by this system.
    The following should be ordered by performances, descending. */
+/*
 #if defined(EPOLL_MODE)
 #include "ae_epoll.c"
 #elif defined(POLL_MODE)
@@ -16,8 +17,8 @@
 #else
 #include "ae_select.c"
 #endif
+*/
 
-/*
 #if defined(__linux__) 
 #include "ae_epoll.c"
 #elif defined(__FreeBSD__)
@@ -25,7 +26,6 @@
 #else
 #include "ae_select.c"
 #endif
-*/
 
 ae_event_loop *ae_create_event_loop(void) {
     ae_event_loop *el;
