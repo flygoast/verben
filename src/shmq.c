@@ -11,7 +11,7 @@
 #include "lock.h"
 #include "shmq.h"
 
-#define CYCLE_WAIT_NANO_SEC 200000 /* 2 minisecond */
+#define CYCLE_WAIT_NANO_SEC 200000 /* 0.2 minisecond */
 #define SHMQ_BLK(q, off)    (shmq_block_t*)((char*)q->addr+(off))
 
 /* shmq block type */
