@@ -1,4 +1,4 @@
-DEBUG = -g -DDEBUG -DEPOLL_MODE
+DEBUG = -g -DDEBUG
 CC = gcc
 CFLAGS  = $(DEBUG) -Wall
 LIB 	= -ldl -rdynamic -lpthread

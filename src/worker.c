@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <errno.h>
 #include <time.h>
 #include <unistd.h>
 #include "verben.h"
@@ -48,8 +49,6 @@ void worker_process_cycle(void *data) {
             continue;
         }
 
-        DEBUG_LOG("XXXXXX:%s:%d", msg, msg_len);
-
         ret = dll.handle_process((char*)msg + sizeof(shm_msg),
                 msg_len - sizeof(shm_msg),
                 &retdata, &retlen, msg->remote_ip, msg->remote_port);
@@ -67,7 +66,11 @@ void worker_process_cycle(void *data) {
                     getpid());
             continue;
         }
-        notifier_write();
+
+        if (notifier_write() < 0) {
+            ERROR_LOG("notifier_write failed:%s", strerror(errno));
+            continue;
+        }
 
         free(temp_msg);
     }

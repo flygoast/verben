@@ -50,11 +50,11 @@ int notifier_read_fd() {
     return pipe_fds[0];
 }
 
-void notifier_read() {
-    assert(read(pipe_fds[0], buffer, sizeof(buffer)) > 0);
+int notifier_read() {
+    return read(pipe_fds[0], buffer, sizeof(buffer));
 }
 
-void notifier_write() {
+int notifier_write() {
     char c = 'x';
-    assert(write(pipe_fds[1], &c, 1) == 1);
+    return write(pipe_fds[1], &c, 1);
 }

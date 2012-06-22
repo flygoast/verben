@@ -274,7 +274,11 @@ static void notifier_handler(ae_event_loop *el, int fd,
     AE_NOTUSED(mask);
     AE_NOTUSED(privdata);
    
-    notifier_read();
+    if (notifier_read() <= 0) {
+        ERROR_LOG("notifier_read failed:%s", strerror(errno));
+        return;
+    }
+
     /* Retrive all processed protocol datagram. */
     while (shmq_pop(send_queue, (void**)&msg, &len, 0) == 0) {
         cli = msg->cli;

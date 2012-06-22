@@ -316,7 +316,7 @@ int main(int argc, char **argv) {
     if (!conf.keep_alive) {
         puts("WARNING:\n"
             " keepalive disabled, at linux, you probably need    \n"
-            " 'echo > /proc/sys/net/ipv4/tcp_tw_reuse' and \n"
+            " 'echo 1 > /proc/sys/net/ipv4/tcp_tw_reuse' and \n"
             " 'sudo sysctl -w net.inet.tcp.msl=1000' for Mac OS X\n"
             " in order to use a lot of clients/requests\n");
     }
