@@ -146,7 +146,7 @@ void boot_notify(int ok, const char *fmt, ...) {
         if (log_buffer == MAP_FAILED) {
             fprintf(stderr, "mmap log buffer failed: %s\n", 
                 strerror(errno));
-            exit(1);
+            return;
         }
     }
 
@@ -198,7 +198,7 @@ void log_write(int level, const char *fmt, ...) {
         if (log_buffer == MAP_FAILED) {
             fprintf(stderr, "mmap log buffer failed: %s\n", 
                 strerror(errno));
-            exit(1);
+            return;
         }
     }
 
@@ -230,7 +230,7 @@ void log_write(int level, const char *fmt, ...) {
         if (log_files[index].fd < 0) {
             fprintf(stderr, "open log file %s failed: %s\n", 
                 log_files[index].path, strerror(errno));
-            exit(1);
+            return;
         }
 
         status = fcntl(log_files[index].fd, F_GETFD, 0);
@@ -242,7 +242,7 @@ void log_write(int level, const char *fmt, ...) {
             != end + pos + 1) {
         fprintf(stderr, "write log to file %s failed: %s\n", 
             log_files[index].path, strerror(errno));
-        exit(1);
+        return;
     }
 }
 

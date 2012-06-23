@@ -511,10 +511,15 @@ static void parse_options(int argc, char **argv) {
     if (optind + 1 == argc) {
         if (!strcasecmp(argv[optind], "stop")) {
             daemon_action = DAEMON_STOP;
-        } else {
+        } else if (!strcasecmp(argv[optind], "start")) {
             daemon_action = DAEMON_START;
+        } else {
+            usage(EXIT_FAILURE); 
+            exit(1);
         }
-    } else if (optind != argc) {
+    } else if (optind == argc) {
+        daemon_action = DAEMON_START;
+    } else {
         usage(EXIT_FAILURE);
         exit(1);
     }
@@ -564,23 +569,27 @@ int main(int argc, char *argv[]) {
     pid = pid_file_running(pid_file);
 
     if (daemon_action == DAEMON_START) {
-        daemonize();
+        daemonize(1, 1);
         rlimit_reset();
 
         if (pid == (pid_t)-1) {
             BOOT_FAILED("Checking running daemon:%s", strerror(errno));
         } else if (pid > 0) {
-            BOOT_FAILED("The daemon have been running, pid=%lu", (unsigned int)pid);
+            BOOT_FAILED("The daemon have been running, pid=%lu", 
+                    (unsigned int)pid);
         }
     
         if ((pid_file_create(pid_file)) != 0) {
             BOOT_FAILED("Create pid file failed: %s", strerror(errno));
         }
-    } else {
+    } else if (daemon_action == DAEMON_STOP) {
         if (kill(pid, SIGQUIT) != 0) {
-            fprintf(stderr, "kill %u failed", (unsigned int)pid);
+            fprintf(stderr, "kill %u failed\n", (unsigned int)pid);
             exit(1);
         }
+        exit(0);
+    } else {
+        usage(EXIT_FAILURE);
         exit(0);
     }
 

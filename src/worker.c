@@ -34,6 +34,7 @@ void worker_process_cycle(void *data) {
             exit(0);
         }
     }
+
     redirect_std();
 
     for ( ; ; ) {

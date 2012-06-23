@@ -108,12 +108,19 @@ void redirect_std() {
 }
 
 /* When no 'daemon(3)' supported, use this one. */
-void daemonize() {
+void daemonize(int nochdir, int noclose) {
     if (fork() != 0) exit(0); /* parent exits */
-    if (chdir("/") != 0) {
-        fprintf(stderr, "chdir failed:%s", strerror(errno));
-        exit(1);
+    if (!nochdir)  {
+        if (chdir("/") != 0) {
+            fprintf(stderr, "chdir failed:%s", strerror(errno));
+            exit(1);
+        }
     }
+
+    if (!noclose) {
+        redirect_std();
+    }
+
     setsid(); /* Create a new session. */
 }
 
@@ -183,7 +190,7 @@ int pid_file_create(char *pid_file) {
 
 finish:
     if (fd >= 0) {
-        int saved_errno;
+        int saved_errno = errno;
         if (locked >= 0) {
             pid_file_lock(fd, 0);
         }
