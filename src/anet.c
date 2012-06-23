@@ -88,7 +88,7 @@ static int anet_tcp_generic_connect(char *err, char *addr,
 static int anet_listen(char *err, int sockfd, struct sockaddr *sa,
         socklen_t len) {
     if (bind(sockfd, sa, len) == -1) {
-        anet_set_error("bind failed: %s", strerror(errno));
+        anet_set_error(err, "bind failed: %s", strerror(errno));
         close(sockfd);
         return ANET_ERR;
     }

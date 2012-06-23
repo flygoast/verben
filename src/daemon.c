@@ -2,8 +2,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <errno.h>
 #include <unistd.h>
+#include <signal.h>
 #include <fcntl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/resource.h>
 
 #ifdef __linux__
@@ -91,13 +95,8 @@ void daemon_set_title(const char* fmt, ...) {
 #endif /* __linux__ */
 }
 
-/* When no 'daemon(3)' supported, use this one. */
-void daemonize() {
+void redirect_std() {
     int fd;
-
-    if (fork() != 0) exit(0); /* parent exits */
-    setsid(); /* Create a new session. */
-
     if ((fd = open("/dev/null", O_RDWR, 0)) != -1) {
         dup2(fd, STDIN_FILENO);
         dup2(fd, STDOUT_FILENO);
@@ -106,6 +105,16 @@ void daemonize() {
             close(fd);
         }
     }
+}
+
+/* When no 'daemon(3)' supported, use this one. */
+void daemonize() {
+    if (fork() != 0) exit(0); /* parent exits */
+    if (chdir("/") != 0) {
+        fprintf(stderr, "chdir failed:%s", strerror(errno));
+        exit(1);
+    }
+    setsid(); /* Create a new session. */
 }
 
 void rlimit_reset() {
@@ -119,6 +128,124 @@ void rlimit_reset() {
     rlim.rlim_cur = 1 << 29;
     rlim.rlim_max = 1 << 29;
     setrlimit(RLIMIT_CORE, &rlim);
+}
+
+static int pid_file_lock(int fd, int enable) {
+    struct flock f;
+    memset(&f, 0, sizeof(f));
+    f.l_type = enable ? F_WRLCK : F_UNLCK;
+    f.l_whence = SEEK_SET;
+    f.l_start = 0;
+    f.l_len = 0;
+
+    if (fcntl(fd, F_SETLKW, &f) < 0) {
+        if (enable && errno == EBADF) {
+            f.l_type = F_RDLCK;
+            if (fcntl(fd, F_SETLKW, &f) >= 0) {
+                return 0;
+            }
+        }
+
+        fprintf(stderr, "fcntl(F_SETLKW) failed:%s\n", strerror(errno));
+        return -1;
+    }
+    return 0;
+}
+
+int pid_file_create(char *pid_file) {
+    int fd, locked, len, ret = -1;
+    char buf[16];
+    mode_t mode;
+
+    mode = umask(022);
+
+    if ((fd = open(pid_file, O_CREAT | O_RDWR | O_EXCL, 0644)) < 0) {
+        goto finish;
+    }
+
+    if ((locked = pid_file_lock(fd, 1)) < 0) {
+        int saved_errno = errno;
+        unlink(pid_file);
+        errno = saved_errno;
+        goto finish;
+    }
+
+    snprintf(buf, sizeof(buf), "%lu", (unsigned long)getpid());
+    len = strlen(buf);
+    if (write(fd, buf, len) != len) {
+        int saved_errno = errno;
+        unlink(pid_file);
+        errno = saved_errno;
+        goto finish;
+    }
+
+    ret = 0;
+
+finish:
+    if (fd >= 0) {
+        int saved_errno;
+        if (locked >= 0) {
+            pid_file_lock(fd, 0);
+        }
+        close(fd);
+        errno = saved_errno;
+    }
+
+    umask(mode);
+    return ret;
+}
+
+pid_t pid_file_running(char *pid_file) {
+    int fd, locked, len;
+    char buf[16];
+    pid_t pid = (pid_t)-1;
+
+    if ((fd = open(pid_file, O_RDONLY, 0644)) < 0) {
+        pid = 0;
+        goto finish;
+    }
+
+    if ((locked = pid_file_lock(fd, 1)) < 0) {
+        goto finish;
+    }
+
+    if ((len = read(fd, buf, sizeof(buf) - 1)) < 0) {
+        goto finish;
+    }
+
+    buf[len] = '\0';
+    while (len--) {
+        if (buf[len] == '\n' || buf[len] == '\r') {
+            buf[len] = '\0';
+        }
+    }
+
+    pid = (pid_t)strtol(buf, NULL, 10);
+    if (pid == 0) {
+        fprintf(stderr, "PID file [%s] corrupted, removing\n", pid_file);
+        unlink(pid_file);
+        errno = EINVAL;
+        goto finish;
+    }
+
+    if (kill(pid, 0) != 0 && errno != EPERM) {
+        int saved_errno = errno;
+        unlink(pid_file);
+        errno = saved_errno;
+        pid = 0;
+        goto finish;
+    }
+
+finish:
+    if (fd >= 0) {
+        int saved_errno = errno;
+        if (locked >= 0) {
+            pid_file_lock(fd, 0);
+        }
+        close(fd);
+        errno = saved_errno;
+    }
+    return pid;
 }
 
 #ifdef DAEMON_TEST_MAIN

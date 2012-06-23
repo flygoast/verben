@@ -126,7 +126,7 @@ int shmq_push(shmq_t *q, void *data, size_t len, int flag) {
 
 shmq_push_again:
     if (shmq_stop) {
-        goto shmq_push_error;
+        goto shmq_push_stop;
     }
 
     head = q->addr->head;
@@ -187,6 +187,9 @@ shmq_push_success:
 shmq_push_error:
     OPT_UNLOCK(&q->addr->lock, flag);
     return -1;
+shmq_push_stop:
+    OPT_UNLOCK(&q->addr->lock, flag);
+    return 1;
 }
 
 
@@ -205,7 +208,7 @@ int shmq_pop(shmq_t *q, void **retdata, int *len, int flag) {
 
 shmq_pop_again:
     if (shmq_stop) {
-        goto shmq_pop_error;
+        goto shmq_pop_stop;
     }
 
     tail = q->addr->tail;
@@ -256,6 +259,9 @@ shmq_pop_success:
 shmq_pop_error:
     OPT_UNLOCK(&q->addr->lock, flag);
     return -1;
+shmq_pop_stop:
+    OPT_UNLOCK(&q->addr->lock, flag);
+    return 1;
 }
 
 /* gcc shmq.c lock.c -DSHMQ_TEST_MAIN -I../inc -lpthread -g */

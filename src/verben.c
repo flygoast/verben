@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <getopt.h>
 #include <unistd.h>
 #include <signal.h>
@@ -25,6 +26,9 @@
 #include "version.h"
 
 #define PROG_NAME                   "verben"
+#define PID_FILE                    "/tmp/verben.pid"
+#define DAEMON_START                0
+#define DAEMON_STOP                 1
 
 #define VB_MAX_PROCESSES            1024
 #define VB_PROCESS_NORESPAWN        -1
@@ -64,6 +68,9 @@ int vb_last_process;
 
 shmq_t *recv_queue;
 shmq_t *send_queue;
+
+int daemon_action;
+char *pid_file;
 
 /* for loading so file */
 void * handle;
@@ -133,8 +140,6 @@ static void process_get_status(void) {
             if (vb_processes[i].pid == pid) {
                 vb_processes[i].status = status;
                 vb_processes[i].exited = 1;
-                DEBUG_LOG("Process %d exit with status %d",
-                        pid, status);
                 break;
             }
         }
@@ -336,7 +341,9 @@ static int reap_children() {
         if (vb_processes[i].exited) {
             if (vb_processes[i].respawn &&
                 !vb_processes[i].exiting &&
-                !vb_quit) {
+                !vb_quit &&
+                vb_processes[i].status != 0) { 
+                /* Only to respawn process exited abnormally. */ 
                 if (spawn_process(vb_processes[i].proc, 
                         vb_processes[i].data, 
                         vb_processes[i].name, i) == -1) {
@@ -440,6 +447,7 @@ static void master_process_cycle() {
             shmq_free(recv_queue);
             shmq_free(send_queue);
             unload_so(&handle);
+            unlink(pid_file);
             exit(0);
         }
 
@@ -474,7 +482,7 @@ static void usage(int status) {
             PROG_NAME);
     } else {
         printf("\
-Usage:%10.10s [--config=<conf_file> | -c]\n\
+Usage:%10.10s [--config=<conf_file> | -c] [start|stop]\n\
 %10.10s       [--version | -v]\n\
 %10.10s       [--help | -h]\n", PROG_NAME, " ", " ");
     }
@@ -499,30 +507,38 @@ static void parse_options(int argc, char **argv) {
             exit(1);
         }
     }
+
+    if (optind + 1 == argc) {
+        if (!strcasecmp(argv[optind], "stop")) {
+            daemon_action = DAEMON_STOP;
+        } else {
+            daemon_action = DAEMON_START;
+        }
+    } else if (optind != argc) {
+        usage(EXIT_FAILURE);
+        exit(1);
+    }
 }
 
 /*---------------------------- main ---------------------------*/
 int main(int argc, char *argv[]) {
     char **saved_argv;
     char *so_name = NULL;
-
+    pid_t pid;
 
     vb_process = VB_PROCESS_MASTER;
 
     parse_options(argc, argv);
+
     if (!conf_file) conf_file = "./verben.conf";
     if (conf_init(&g_conf, conf_file) != 0) {
         BOOT_FAILED("Load conf file [%s]", conf_file);
     }
-    BOOT_OK("Load conf file [%s]", conf_file);
-
     init_vb_processes();
-    BOOT_OK("Initialize process structure");
 
     if (init_signals() < 0) {
         BOOT_FAILED("Initialize signal handlers");
     }
-    BOOT_OK("Initialize signal handlers");
 
     if (log_init(conf_get_str_value(&g_conf, "log_dir", "/tmp"),
             conf_get_str_value(&g_conf, "log_name", PROG_NAME".log"),
@@ -532,23 +548,41 @@ int main(int argc, char *argv[]) {
             conf_get_int_value(&g_conf, "log_multi", LOG_MULTI_NO)) < 0) {
         BOOT_FAILED("Initialize log file");
     }
-    BOOT_OK("Initialize log file");
 
     /* Make the process to be the leader process of the group */
     if (setpgrp() < 0) {
         BOOT_FAILED("Set self to be leader of the process group");
     }
-    BOOT_OK("Set self to be leader of the process group");
 
     /* load .so file */
     so_name = conf_get_str_value(&g_conf, "so_file", NULL);
     if (load_so(&handle, syms, so_name) < 0) {
         BOOT_FAILED("load so file %s", so_name ? so_name : "(NULL)");
     }
-    BOOT_OK("load so file %s", so_name ? so_name : "(NULL)");
 
-    daemonize();
-    rlimit_reset();
+    pid_file = conf_get_str_value(&g_conf, "pid_file", PID_FILE);
+    pid = pid_file_running(pid_file);
+
+    if (daemon_action == DAEMON_START) {
+        daemonize();
+        rlimit_reset();
+
+        if (pid == (pid_t)-1) {
+            BOOT_FAILED("Checking running daemon:%s", strerror(errno));
+        } else if (pid > 0) {
+            BOOT_FAILED("The daemon have been running, pid=%lu", (unsigned int)pid);
+        }
+    
+        if ((pid_file_create(pid_file)) != 0) {
+            BOOT_FAILED("Create pid file failed: %s", strerror(errno));
+        }
+    } else {
+        if (kill(pid, SIGQUIT) != 0) {
+            fprintf(stderr, "kill %u failed", (unsigned int)pid);
+            exit(1);
+        }
+        exit(0);
+    }
 
     /* Invoke the hook in master. */
     if (dll.handle_init) {

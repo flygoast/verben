@@ -5,7 +5,9 @@
 #include <assert.h>
 #include <unistd.h>
 #include <time.h>
+#include <signal.h>
 #include "verben.h"
+#include "daemon.h"
 #include "conn.h"
 #include "dlist.h" 
 #include "sds.h"
@@ -311,13 +313,15 @@ void conn_process_cycle(void *data) {
     dlist_set_free(clients, free_client_node);
 
     if (!clients) {
-        FATAL_LOG("Initialize clients connection linked list failed");
+        boot_notify(-1, "Initialize clients connection linked list."); 
+        kill(getppid(), SIGQUIT); /* exit the daemon */
         exit(0);
     }
 
     ael = ae_create_event_loop();
     if (!ael) {
-        FATAL_LOG("Initalize event loop structure failed");
+        boot_notify(-1, "Initalize event loop structure.");
+        kill(getppid(), SIGQUIT); /* exit the daemon */
         exit(0);
     }
 
@@ -325,28 +329,41 @@ void conn_process_cycle(void *data) {
     port = conf_get_int_value(conf, "port", 8773);
     listen_fd = anet_tcp_server(sock_error, host, port);
     if (listen_fd == ANET_ERR) {
-        FATAL_LOG("Listen socket[%s:%d] failed:%s",
+        boot_notify(-1, "Listen socket[%s:%d]:%s",
                 host, port, sock_error);
+        kill(getppid(), SIGQUIT); /* exit the daemon */
         exit(0);
     }
 
     if (ae_create_time_event(ael, 1, server_cron, NULL, NULL) == AE_ERR) {
-        FATAL_LOG("Create time event failed");
+        boot_notify(-1, "Create time event");
+        kill(getppid(), SIGQUIT); /* exit the daemon */
         exit(0);
     }
 
     if (ae_create_file_event(ael, notifier, AE_READABLE, 
                 notifier_handler, NULL) == AE_ERR) {
-        FATAL_LOG("Create notifier file event failed");
+        boot_notify(-1, "Create notifier file event");
+        kill(getppid(), SIGQUIT); /* exit the daemon */
         exit(0);
     }
 
     if (listen_fd > 0 && ae_create_file_event(ael, listen_fd, 
                 AE_READABLE, accept_handler, NULL) == AE_ERR) {
-        FATAL_LOG("Create accept file event failed");
+        boot_notify(-1, "Create accept file event");
+        kill(getppid(), SIGQUIT); /* exit the daemon */
         exit(0);
     }
 
+    if (dll.handle_init) {
+        if (dll.handle_init(data, vb_process) != 0) {
+            boot_notify(-1, "Invoke handle_init hook in conn process");
+            kill(getppid(), SIGQUIT); /* exit the daemon */
+            exit(0);
+        }
+    }
+
+    redirect_std();
     ae_main(ael);
     if (dll.handle_fini) {
         dll.handle_fini(data, vb_process);
@@ -354,6 +371,5 @@ void conn_process_cycle(void *data) {
 
     ae_free_event_loop(ael);
     dlist_destroy(clients);
-    DEBUG_LOG("Conn process[%d] will exit", getpid());
     exit(0);
 }
