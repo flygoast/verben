@@ -7,6 +7,12 @@
 #include <errno.h>
 #include <sys/wait.h>
 #include <assert.h>
+#ifdef __linux__
+#define HAVE_BACKTRACE
+#endif /* __linux__ */
+#ifdef HAVE_BACKTRACE
+#include <execinfo.h>
+#endif /* HAVE_BACKTRACE */
 #include "verben.h"
 #include "daemon.h"
 #include "notifier.h"
@@ -182,6 +188,32 @@ static void vb_signal_handler(int signo) {
     }
 }
 
+#ifdef HAVE_BACKTRACE
+static void sig_segv_handler(int sig, siginfo_t *info, void *secret) {
+    void *trace[100];
+    char **messages = NULL;
+    int i, trace_size = 0;
+    struct sigaction sa;
+
+    FATAL_LOG("Crashed by signal: %d", sig);
+    /* Generate the stack trace. */
+    trace_size = backtrace(trace, 100);
+    messages = backtrace_symbols(trace, trace_size);
+    FATAL_LOG("--- STACK TRACE --- ");
+    for (i = 0; i < trace_size; ++i) {
+        FATAL_LOG("%s", messages[i]);
+    }
+
+    /* Make sure we exit with the right signal at the end. So for
+     * instance the core will be dumped if enabled. */
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_NODEFER | SA_ONSTACK | SA_RESETHAND;
+    sa.sa_handler = SIG_DFL;
+    sigaction(sig, &sa, NULL);
+    kill(getpid(), sig);
+}
+#endif /* HAVE_BACKTRACE */
+
 static int init_signals() {
     vb_signal_t *sig;
     struct sigaction sa;
@@ -194,6 +226,19 @@ static int init_signals() {
             return -1;
         }
     }
+
+#ifdef HAVE_BACKTRACE
+    sigemptyset(&sa.sa_mask);
+    /* When the SA_SIGINFO flag is set in sa_flags then sa_sigaction
+     * is used. Otherwise, sa_handler is used. */
+    sa.sa_flags = SA_NODEFER | SA_ONSTACK | SA_RESETHAND | SA_SIGINFO;
+    sa.sa_sigaction = sig_segv_handler;
+    sigaction(SIGSEGV, &sa, NULL);
+    sigaction(SIGBUS, &sa, NULL);
+    sigaction(SIGFPE, &sa, NULL);
+    sigaction(SIGILL, &sa, NULL);
+#endif /* HAVE_BACKTRACE */
+
     return 0;
 }
 
