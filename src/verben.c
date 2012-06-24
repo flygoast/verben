@@ -583,6 +583,12 @@ int main(int argc, char *argv[]) {
             BOOT_FAILED("Create pid file failed: %s", strerror(errno));
         }
     } else if (daemon_action == DAEMON_STOP) {
+        if (pid == (pid_t)-1) {
+            BOOT_FAILED("Checking running daemon:%s", strerror(errno));
+        } else if (pid == 0) {
+            BOOT_FAILED("No verben daemon running now");
+        }
+
         if (kill(pid, SIGQUIT) != 0) {
             fprintf(stderr, "kill %u failed\n", (unsigned int)pid);
             exit(1);
