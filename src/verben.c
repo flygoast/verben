@@ -222,6 +222,14 @@ static void sig_segv_handler(int sig, siginfo_t *info, void *secret) {
 static int init_signals() {
     vb_signal_t *sig;
     struct sigaction sa;
+#ifdef HAVE_BACKTRACE
+    static char alt_stack[SIGSTKSZ];
+    stack_t ss = {
+        .ss_size = SIGSTKSZ,
+        .ss_sp = alt_stack,
+    };
+    sigaltstack(&ss, NULL);
+#endif /* HAVE_BACKTRACE */
     
     for (sig = signals; sig->signo != 0; ++sig) {
         memset(&sa, 0, sizeof(struct sigaction));
