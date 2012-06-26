@@ -112,15 +112,10 @@ int conf_init(conf_t *conf, const char *filename) {
         return -1;
     }
 
-    conf->list = (conf_entry_t **)calloc(sizeof(conf_entry_t *),
-        CONF_SLOTS_INITIAL_NUM);
     if (!conf->list) {
-        fprintf(stderr, "calloc failed\n");
-        ret = -1;
-        goto error;
+        conf->size = 0;
+        conf->slots = 0;
     }
-    conf->size = 0;
-    conf->slots = CONF_SLOTS_INITIAL_NUM;
  
     while (fgets(buf, MAX_LINE, fp)) {
         n = strlen(buf);
@@ -130,6 +125,15 @@ int conf_init(conf_t *conf, const char *filename) {
 
         if (*buf != '#' && str_explode(NULL, 
                     (unsigned char*)buf, field, 2) == 2) {
+            /* Process `include' directive. */
+            if (!strcmp((char *)field[0], "include")) {
+                if (conf_init(conf, (const char *)field[1]) != 0) {
+                    ret = -1;
+                    goto error;
+                }
+                continue;
+            }
+            
             pentry = (conf_entry_t*)malloc(sizeof(conf_entry_t));
             if (!pentry) {
                 fprintf(stderr, "malloc failed\n");
