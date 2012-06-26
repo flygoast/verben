@@ -433,9 +433,12 @@ static void master_process_cycle() {
             conf_get_int_value(&g_conf, "worker_num", 4),
             VB_PROCESS_RESPAWN);
 
-    /* Close notifier between workers and conn process. */
+    /* Don't close any fds. Because the master will spawn process on 
+     * the fly once the chile aborted. */
+    /*
     notifier_close_rd();
     notifier_close_wr();
+    */
 
     sigemptyset(&set);
     for ( ; ; ) {
