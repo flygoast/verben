@@ -294,6 +294,11 @@ static void notifier_handler(ae_event_loop *el, int fd,
     while (shmq_pop(send_queue, (void**)&msg, &len, 0) == 0) {
         cli = msg->cli;
         if (reduce_client_refcount(cli) >= 0) {
+            if (msg->close_conn) {
+                cli->close_conn = 1;
+            } else {
+                cli->close_conn = 0;
+            }
             cli->sendbuf = sdscatlen(cli->sendbuf, msg->data, 
                     len - sizeof(shm_msg));
             if (ae_create_file_event(el, cli->fd, AE_WRITABLE, 
