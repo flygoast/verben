@@ -5,7 +5,7 @@ LIB 	= -ldl -rdynamic -lpthread
 INC     = -I../inc
 VERBENOO = verben.o dll.o log.o conf.o lock.o shmq.o notifier.o \
       anet.o dlist.o worker.o conn.o ae.o sds.o daemon.o
-BENCHOO = benchmark.o dlist.o ae.o sds.o anet.o
+BENCHOO = echo_benchmark.o dlist.o ae.o sds.o anet.o
 VERBEN = verben
 BENCH = echo_benchmark
 
