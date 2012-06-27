@@ -64,6 +64,14 @@ void worker_process_cycle(void *data) {
             FATAL_LOG("Out of memory");
             exit(0);
         }
+
+        /* Whether close the connection after send the response. */
+        if (ret == 0) {
+            temp_msg->close_conn = 0;
+        } else {
+            temp_msg->close_conn = 1;
+        }
+
         memcpy((char *)temp_msg + sizeof(shm_msg), retdata, retlen);
 
         ret = shmq_push(send_queue, temp_msg, sizeof(shm_msg) + retlen, 

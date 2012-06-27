@@ -159,6 +159,7 @@ int conf_init(conf_t *conf, const char *filename) {
         }
     }
 error:
+    fclose(fp);
     if (ret == -1) {
         conf_free(conf);
     }

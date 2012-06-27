@@ -349,8 +349,7 @@ static int reap_children() {
         if (vb_processes[i].exited) {
             if (vb_processes[i].respawn &&
                 !vb_processes[i].exiting &&
-                !vb_quit &&
-                vb_processes[i].status != 0) { 
+                !vb_quit) {
                 /* Only to respawn process exited abnormally. */ 
                 if (spawn_process(vb_processes[i].proc, 
                         vb_processes[i].data, 
@@ -613,15 +612,13 @@ int main(int argc, char *argv[]) {
     /* Invoke the hook in master. */
     if (dll.handle_init) {
         if (dll.handle_init(NULL, vb_process) != 0) {
-            FATAL_LOG("Invoke hook handle_init in master failed");
-            exit(1);
+            BOOT_FAILED("Invoke hook handle_init in master");
         }
     }
 
     saved_argv = daemon_argv_dup(argc, argv);
     if (!saved_argv) {
-        FATAL_LOG("Duplicate argv failed");
-        exit(1);
+        BOOT_FAILED("Duplicate argv");
     }
 
     daemon_set_title("%s:[master]", PROG_NAME);

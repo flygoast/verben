@@ -39,14 +39,6 @@ static void free_client_node(void *cli) {
 
 static void free_client(client_conn *cli) {
     dlist_node *ln;
-    ae_delete_file_event(ael, cli->fd, AE_READABLE);
-    ae_delete_file_event(ael, cli->fd, AE_WRITABLE);
-
-    if (dll.handle_close) {
-        dll.handle_close(cli->remote_ip, cli->remote_port);
-    }
-
-    close(cli->fd);
     ln = dlist_search_key(clients, cli);
     /* This line of code will free the 'cli' node automately. */
     dlist_delete_node(clients, ln);
@@ -60,6 +52,16 @@ static int reduce_client_refcount(client_conn *cli) {
     return 0;
 }
 
+static void close_client(client_conn *cli) {
+    if (dll.handle_close) {
+        dll.handle_close(cli->remote_ip, cli->remote_port);
+    }
+    ae_delete_file_event(ael, cli->fd, AE_READABLE);
+    ae_delete_file_event(ael, cli->fd, AE_WRITABLE);
+    close(cli->fd);
+    reduce_client_refcount(cli);
+}
+
 static int server_cron(ae_event_loop *el, long long id, void *privdate) {
     dlist_iter iter;
     dlist_node *node;
@@ -71,7 +73,7 @@ static int server_cron(ae_event_loop *el, long long id, void *privdate) {
         cli = node->value;
         if (cli->refcount == 0 && client_timeout &&
                 unix_clock - cli->access_time > client_timeout) {
-            reduce_client_refcount(cli);
+            close_client(cli);
         }
     }
 
@@ -94,12 +96,12 @@ static void read_from_client(ae_event_loop *el, int fd,
             return;
         } else {
             ERROR_LOG("read failed from %d:%s", cli->fd, strerror(errno));
-            reduce_client_refcount(cli);
+            close_client(cli);
             return;
         }
     } else if (nread == 0) {
         NOTICE_LOG("Client close fd %d", cli->fd);
-        reduce_client_refcount(cli);
+        close_client(cli);
         return;
     }
     buf[nread] = '\0';
@@ -116,7 +118,7 @@ static void read_from_client(ae_event_loop *el, int fd,
     if (cli->recv_prot_len < 0 || cli->recv_prot_len > MAX_PROT_LEN) {
         /* invalid protocol length */
         ERROR_LOG("Invalid protocol length:%d", cli->recv_prot_len);
-        reduce_client_refcount(cli);
+        close_client(cli);
     } else if (cli->recv_prot_len == 0) {
         /* unknown protocol length */
         /* process big protocol */
@@ -127,7 +129,7 @@ static void read_from_client(ae_event_loop *el, int fd,
         shm_msg *msg = (shm_msg*)malloc(sizeof(*msg) + cli->recv_prot_len);
         if (!msg) {
             ERROR_LOG("Create message failed for fd %d", cli->fd);
-            reduce_client_refcount(cli);
+            close_client(cli);
             return;
         }
         msg->cli = cli;
@@ -138,7 +140,8 @@ static void read_from_client(ae_event_loop *el, int fd,
         if (shmq_push(recv_queue, msg, 
                     sizeof(*msg) + cli->recv_prot_len, 0) != 0) {
             ERROR_LOG("shmq push failed for fd:%d", cli->fd);
-            reduce_client_refcount(cli);
+            close_client(cli);
+            return;
         }
         ++cli->refcount;
         free(msg);
@@ -166,6 +169,7 @@ static client_conn *create_client(int cli_fd, char *cli_ip, int cli_port) {
     }
 
     cli->fd = cli_fd;
+    cli->close_conn = 0;
     cli->refcount = 0;
     cli->recv_prot_len = 0;
     cli->remote_ip = strdup(cli_ip);
@@ -196,7 +200,9 @@ static void write_to_client(ae_event_loop *el, int fd,
         if (errno == EAGAIN) {
             nwrite = 0;
         } else {
-            reduce_client_refcount(cli);
+            ERROR_LOG("write to [%s:%d] failed:%s", cli->remote_ip,
+                    cli->remote_port);
+            close_client(cli);
             return;
         }
     }
@@ -204,6 +210,9 @@ static void write_to_client(ae_event_loop *el, int fd,
     if (nwrite == sdslen(cli->sendbuf)) {
         ae_delete_file_event(el, cli->fd, AE_WRITABLE);
         sdsclear(cli->sendbuf);
+        if (cli->close_conn) {
+            close_client(cli);
+        }
     } else {
         /* process the left buffer */
         cli->sendbuf = sdsrange(cli->sendbuf, nwrite, -1);
@@ -222,7 +231,7 @@ static void accept_common_handler(int cli_fd, char *cli_ip, int cli_port) {
 
     if (client_limit && dlist_length(clients) > client_limit) {
         ERROR_LOG("Max number of clients reached");
-        reduce_client_refcount(c);
+        close_client(c);
         return;
     }
 
@@ -230,7 +239,7 @@ static void accept_common_handler(int cli_fd, char *cli_ip, int cli_port) {
         if (dll.handle_open(&retbuf, &len, cli_ip, cli_port) != 0) {
             WARNING_LOG("Close socket %d according to handle_open hook",
                     c->fd);
-            reduce_client_refcount(c);
+            close_client(c);
             return;
         } else {
             /* You can send something such as welcome information once
@@ -241,7 +250,7 @@ static void accept_common_handler(int cli_fd, char *cli_ip, int cli_port) {
                             write_to_client, c) == AE_ERR) {
                     ERROR_LOG("Create write file event failed on fd %d",
                         c->fd);
-                    reduce_client_refcount(c);
+                    close_client(c);
                 }
             }
         }
@@ -291,7 +300,7 @@ static void notifier_handler(ae_event_loop *el, int fd,
                     write_to_client, cli) == AE_ERR) {
                 ERROR_LOG("Create write file event failed on fd %d",
                         cli->fd);
-                reduce_client_refcount(cli);
+                close_client(cli);
             }
         }
         free(msg);
@@ -365,6 +374,7 @@ void conn_process_cycle(void *data) {
 
     redirect_std();
     ae_main(ael);
+
     if (dll.handle_fini) {
         dll.handle_fini(data, vb_process);
     }

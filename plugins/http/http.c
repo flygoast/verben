@@ -142,7 +142,7 @@ int handle_process(char *rcvbuf, int rcvlen,
     if (n < 0) {
         return -1;
     }
-    return 0;
+    return -1;
 }
 
 void handle_fini(void *cycle, int proc_type) {

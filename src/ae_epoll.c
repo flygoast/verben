@@ -1,5 +1,8 @@
 /* Linux epoll(2) based ae.c module. */
 
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
 #include <sys/epoll.h>
 
 typedef struct ae_api_state {
@@ -47,6 +50,7 @@ static int ae_api_add_event(ae_event_loop *el, int fd, int mask) {
     ee.data.u64 = 0;
     ee.data.fd = fd;
     if (epoll_ctl(state->epfd, op, fd, &ee) == -1) {
+        fprintf(stderr, "%s\n", strerror(errno));
         return -1;
     }
     return 0;

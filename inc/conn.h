@@ -5,6 +5,7 @@
 
 typedef struct client_conn {
     int     fd;
+    int     close_conn; /* whether close connection after send response */
     int     refcount;   /* number of messages havn't been processed */ 
     char    *remote_ip;
     int     remote_port;
@@ -18,6 +19,7 @@ typedef struct shm_msg {
     client_conn *cli;
     char        remote_ip[16];
     int         remote_port;
+    int         close_conn;
     char        data[0];
 } __attribute__((packed)) shm_msg;
 
