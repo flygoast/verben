@@ -13,6 +13,7 @@ $(TARGETS): $(OO)
 
 install:
 	install $(TARGETS) ../../bin/
+	install http.conf ../../bin/
 
 .c.o:
 	$(CC) $(CFLAGS) $< -c -o $@ $(INC)
