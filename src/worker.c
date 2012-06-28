@@ -53,6 +53,7 @@ void worker_process_cycle(void *data) {
             if (msg) free(msg);
             continue;
         } else if (ret == 1) {
+            if (msg) free(msg);
             continue;
         }
 
@@ -72,10 +73,15 @@ void worker_process_cycle(void *data) {
             temp_msg->close_conn = 1;
         }
 
-        memcpy((char *)temp_msg + sizeof(shm_msg), retdata, retlen);
+        if (retdata) {
+            memcpy((char *)temp_msg + sizeof(shm_msg), retdata, retlen);
+            free(retdata);
+        }
 
         ret = shmq_push(send_queue, temp_msg, sizeof(shm_msg) + retlen, 
                     SHMQ_WAIT | SHMQ_LOCK);
+        free(temp_msg);
+
         if (ret < 0) {
             ERROR_LOG("shmq_push to send_queue in worker[%d] failed",
                     getpid());
@@ -88,7 +94,5 @@ void worker_process_cycle(void *data) {
             ERROR_LOG("notifier_write failed:%s", strerror(errno));
             continue;
         }
-
-        free(temp_msg);
     }
 }
