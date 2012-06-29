@@ -4,6 +4,11 @@
 #include <ctype.h>
 #include <errno.h>
 #include <alloca.h>
+#include <libgen.h>
+#include <dirent.h>
+#include <fnmatch.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include "conf.h"
 
 #define CONF_SLOTS_INITIAL_NUM      100
@@ -127,9 +132,54 @@ int conf_init(conf_t *conf, const char *filename) {
                     (unsigned char*)buf, field, 2) == 2) {
             /* Process `include' directive. */
             if (!strcmp((char *)field[0], "include")) {
-                if (conf_init(conf, (const char *)field[1]) != 0) {
+                char dirc[256];
+                char basec[256];
+                char *dname;
+                char *bname;
+                DIR *dir;
+                struct entry *ent;
+                struct stat st;
+                int rc;
+
+                strncpy(dirc, (const char *)field[1], 255);
+                strncpy(basec, (const char *)field[1], 255);
+                dname = dirname(dirc);
+                bname = basename(basec);
+
+                if (!strcmp(bname, ".") || !strcmp(bname, "..") 
+                        || !strcmp(bname, "/")) {
                     ret = -1;
                     goto error;
+                }
+
+                if (!(dir = opendir(dname))) {
+                    ret = -1;
+                    goto error;
+                }
+                
+                while ((ent = readdir(dir)) != 0) {
+                    if (stat((const char *)ent->d_name, &st) != 0) {
+                        ret = -1;
+                        goto error;
+                    }
+
+                    if (S_ISDIR(st.st_mode)) {
+                        continue;
+                    }
+
+                    if (!(rc = fnmatch(bname, ent->d_name, FNM_PATHNAME|FNM_PERIOD))) {
+                        char fullpath[256];
+                        snprintf(fullpath, 255, "%s/%s", dname, ent->d_name);
+                        if (conf_init(conf, (const char *)fullpath) != 0) {
+                            ret = -1;
+                            goto error;
+                        }
+                    } else if (ret == FNM_NOMATCH) {
+                        continue;
+                    } else {
+                        ret = -1;
+                        goto error;
+                    }
                 }
                 continue;
             }
