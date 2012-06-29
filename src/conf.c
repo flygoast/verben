@@ -103,6 +103,9 @@ static int str2int(const char *strval, int def) {
     return ret;
 }
 
+/* Before calling this function first time, please
+ * initialize the `conf_t' structure with zero. 
+ * such as 'conf_t conf = {};' */
 int conf_init(conf_t *conf, const char *filename) {
     int n;
     int ret = 0;
@@ -111,6 +114,13 @@ int conf_init(conf_t *conf, const char *filename) {
     conf_entry_t *pentry;
     conf_entry_t **ptemp;
     unsigned char *field[2];
+    char resolved_path1[PATH_MAX];
+    char resolved_path2[PATH_MAX];
+
+    if (!realpath(filename, resolved_path1)) {
+        fprintf(stderr, "%s\n", strerror(errno));
+        return -1;
+    }
 
     if (!(fp = fopen(filename, "r"))) {
         perror("fopen failed");
@@ -137,8 +147,7 @@ int conf_init(conf_t *conf, const char *filename) {
                 char *dname;
                 char *bname;
                 DIR *dir;
-                struct entry *ent;
-                struct stat st;
+                struct dirent *entry;
                 int rc;
 
                 strncpy(dirc, (const char *)field[1], 255);
@@ -157,8 +166,15 @@ int conf_init(conf_t *conf, const char *filename) {
                     goto error;
                 }
                 
-                while ((ent = readdir(dir)) != 0) {
-                    if (stat((const char *)ent->d_name, &st) != 0) {
+                while ((entry = readdir(dir))) {
+                    char fullpath[256];
+#ifdef _DIRENT_HAVE_D_TYPE
+                    if (entry->d_type == DT_DIR) {
+                        continue;
+                    }
+#else
+                    struct stat st;
+                    if (lstat((const char *)entry->d_name, &st) != 0) {
                         ret = -1;
                         goto error;
                     }
@@ -166,15 +182,28 @@ int conf_init(conf_t *conf, const char *filename) {
                     if (S_ISDIR(st.st_mode)) {
                         continue;
                     }
+#endif /* _DIRENT_HAVE_D_TYPE */
+                    snprintf(fullpath, 255, "%s/%s", dname, 
+                        entry->d_name);
 
-                    if (!(rc = fnmatch(bname, ent->d_name, FNM_PATHNAME|FNM_PERIOD))) {
-                        char fullpath[256];
-                        snprintf(fullpath, 255, "%s/%s", dname, ent->d_name);
+                    if (!realpath(fullpath, resolved_path2)) {
+                        fprintf(stderr, "%s\n", strerror(errno));
+                        ret = -1;
+                        goto error;
+                    }
+
+                    if (!strcmp(resolved_path1, resolved_path2)) {
+                        /* skip the same file */
+                        continue;
+                    }
+
+                    if (!(rc = fnmatch(bname, entry->d_name, 
+                                    FNM_PATHNAME | FNM_PERIOD))) {
                         if (conf_init(conf, (const char *)fullpath) != 0) {
                             ret = -1;
                             goto error;
                         }
-                    } else if (ret == FNM_NOMATCH) {
+                    } else if (rc == FNM_NOMATCH) {
                         continue;
                     } else {
                         ret = -1;
@@ -267,21 +296,22 @@ char * conf_get_str_value(conf_t *conf, const char *key,
     return def;
 }
 
-#ifdef conf_TEST
+#ifdef CONF_TEST_MAIN
+/* gcc conf.c -DCONF_TEST_MAIN -I../inc */
 int main(int argc, char *argv[]) {
-    conf_t   conf;
+    conf_t   conf = {};
     int i;
 //    char test[] = "a#sys1.dev.corp.qihoo.net#1#fenggu_test#6#>#1#2#0.1";
     unsigned char test[] = "a#votdb1.ipt.dxt.qihoo.net#160#add_agent_mon#25#ROOT_URATE#>#3#1#6#0#根分区使用率";
-    unsigned char *field[9];
-/*
+    unsigned char *field[12];
+
     if (conf_init(&conf, argv[1]) != 0) {
         fprintf(stderr, "conf_init error\n");
         exit(1);
     }
     conf_dump(&conf);
     conf_free(&conf);
-*/
+
     if (str_explode("#", test, field, 12) != 12) {
         fprintf(stderr, "str_explode failed");
         exit(1);
@@ -292,4 +322,4 @@ int main(int argc, char *argv[]) {
     }
     exit(0);
 }
-#endif /* conf_TEST */
+#endif /* CONF_TEST_MAIN */
