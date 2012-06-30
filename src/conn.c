@@ -28,6 +28,7 @@ static dlist    *clients;
 static int      client_limit;
 static int      client_timeout;
 static time_t   unix_clock;
+static pid_t    conn_pid;
 
 static void free_client_node(void *cli) {
     client_conn *c = (client_conn *)cli;
@@ -133,6 +134,8 @@ static void read_from_client(ae_event_loop *el, int fd,
             return;
         }
         msg->cli = cli;
+        msg->pid = conn_pid;
+        msg->magic = CONN_MSG_MAGIC;
         strncpy(msg->remote_ip, cli->remote_ip, 16);
         msg->remote_port = cli->remote_port;
         memcpy(msg->data, cli->recvbuf, cli->recv_prot_len);
@@ -292,6 +295,19 @@ static void notifier_handler(ae_event_loop *el, int fd,
 
     /* Retrive all processed protocol datagram. */
     while (shmq_pop(send_queue, (void**)&msg, &len, 0) == 0) {
+        /* check this to avoid core dump because of invalid cli address */
+        if (msg->magic != CONN_MSG_MAGIC) {
+            ERROR_LOG("Invalid message, magic number 0x%08x", 
+                msg->magic);
+            continue;
+        }
+
+        if (conn_pid != msg->pid) {
+            ERROR_LOG("Pid[%d]'s datagram, discarded", msg->pid);
+            continue;
+        }
+
+        /* It's a valid message. */
         cli = msg->cli;
         if (reduce_client_refcount(cli) >= 0) {
             if (msg->close_conn) {
@@ -318,6 +334,8 @@ void conn_process_cycle(void *data) {
     conf_t *conf = (conf_t*)data;
     int notifier = notifier_read_fd();
     vb_process = VB_PROCESS_CONN;
+
+    conn_pid = getpid();
 
     client_limit = conf_get_int_value(conf, "client_limit", 0);
     client_timeout = conf_get_int_value(conf, "client_timeout", 60);

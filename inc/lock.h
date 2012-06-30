@@ -9,7 +9,7 @@ typedef struct lock_struct {
 } lock_t;
 
 #define LOCK_INIT(l) \
-    ((l)->semid = sysv_sem_init(NULL) < 0 ? -1 : 0)
+    ((((l)->semid = sysv_sem_init(NULL)) < 0) ? -1 : 0)
 #define LOCK_LOCK(l)    sysv_sem_lock((l)->semid)
 #define LOCK_UNLOCK(l)  sysv_sem_unlock((l)->semid)
 #define LOCK_DESTROY(l) sysv_sem_destroy((l)->semid)
@@ -19,10 +19,22 @@ typedef struct lock_struct {
     pthread_mutex_t mutex;
 } lock_t;
 
-#define LOCK_INIT(l)    pthread_lock_init(&((l)->mutex))
+#define LOCK_INIT(l)    \
+    ((pthread_lock_init(&((l)->mutex)) != 0) ? -1 : 0)
 #define LOCK_LOCK(l)    pthread_do_lock(&((l)->mutex))
 #define LOCK_UNLOCK(l)  pthread_do_unlock(&((l)->mutex))
 #define LOCK_DESTROY(l) pthread_lock_destroy(&((l)->mutex))
+
+#elif defined(FCNTL_LOCK_MODE)
+typedef struct lock_struct {
+    int fd;
+} lock_t;
+
+#define LOCK_INIT(l)    \
+    ((((l)->fd = fcntl_init("/tmp/verben")) != -1) ? 0 : -1)
+#define LOCK_LOCK(l)    fcntl_lock((l)->fd, LOCK_WR)
+#define LOCK_UNLOCK(l)  fcntl_unlock((l)->fd)
+#define LOCK_DESTROY(l) fcntl_destroy((l)->fd)
 
 #endif
 
@@ -37,7 +49,7 @@ void sysv_sem_destroy(int semid);
 int fcntl_init(const char *pathname);
 int fcntl_lock(int fd, int flag);
 int fcntl_unlock(int fd);
-void fcntl_destory(int fd);
+void fcntl_destroy(int fd);
 
 int pthread_lock_init(pthread_mutex_t *mutexptr);
 int pthread_do_lock(pthread_mutex_t *mutexptr);

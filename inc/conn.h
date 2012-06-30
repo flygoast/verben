@@ -1,7 +1,10 @@
 #ifndef __CONN_H_INCLUDED__
 #define __CONN_H_INCLUDED__
 
+#include <unistd.h>
 #include "ae.h"
+
+#define CONN_MSG_MAGIC   0x434f4e4e     /* conn */
 
 typedef struct client_conn {
     int     fd;
@@ -16,11 +19,15 @@ typedef struct client_conn {
 } client_conn;
 
 typedef struct shm_msg {
-    client_conn *cli;
-    char        remote_ip[16];
-    int         remote_port;
-    int         close_conn;
-    char        data[0];
+    client_conn     *cli;
+    unsigned int    magic; /* the field just to protect `cli`'s usage to
+                              avoid core dump upon some error. */
+    pid_t           pid; /* the field used to check whethe the receiving 
+                        * conn process is a new conn process. */
+    char            remote_ip[16];
+    int             remote_port;
+    int             close_conn;
+    char            data[0];
 } __attribute__((packed)) shm_msg;
 
 extern ae_event_loop    *ael;

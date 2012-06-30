@@ -13,6 +13,7 @@ $(TARGETS): $(OO)
 
 install:
 	install $(TARGETS) ../../bin/
+	cp echo.conf ../../bin/
 
 .c.o:
 	$(CC) $(CFLAGS) $< -c -o $@ $(INC)

@@ -82,7 +82,7 @@ int sysv_sem_init(const char *pathname) {
     arg.val = 1;
     do {
         rc = semctl(semid, 0, SETVAL, arg);
-    } while (rc < 0 && errno == EINTR);
+    } while (rc < 0);
 
     if (rc < 0) {
         do {
@@ -101,10 +101,7 @@ int sysv_sem_lock(int semid) {
     op.sem_op = -1;
     op.sem_flg = SEM_UNDO;
 
-    do {
-        rc = semop(semid, &op, 1);
-    } while (rc < 0 && errno == EINTR);
-
+    rc = semop(semid, &op, 1);
     return rc;
 }
 
@@ -115,9 +112,7 @@ int sysv_sem_unlock(int semid) {
     op.sem_op = 1;
     op.sem_flg = SEM_UNDO;
 
-    do {
-        rc = semop(semid, &op, 1);
-    } while (rc < 0 && errno == EINTR);
+    rc = semop(semid, &op, 1);
     return rc;
 }
 
@@ -156,7 +151,7 @@ int fcntl_init(const char *pathname) {
     char s[MAXPATHLEN];
     int fd;
     strncpy(s, pathname, MAXPATHLEN - 1);
-    strxcat(s, ".sem.xxxxxx", MAXPATHLEN);
+    strxcat(s, ".sem.XXXXXX", MAXPATHLEN);
     fd = mkstemp(s);
     if (fd < 0) {
         return -1;
@@ -178,10 +173,7 @@ int fcntl_lock(int fd, int flag) {
         l.l_type = F_WRLCK;
     }
 
-    do {
-        rc = fcntl(fd, F_SETLKW, &l);
-    } while (rc < 0 && errno == EINTR);
-
+    rc = fcntl(fd, F_SETLKW, &l);
     return rc;
 }
 
@@ -193,12 +185,11 @@ int fcntl_unlock(int fd) {
     l.l_len = 0;
     l.l_pid = 0;
     l.l_type = F_UNLCK;
-    do {
-        rc = fcntl(fd, F_SETLKW, &l);
-    } while (rc < 0 && errno == EINTR);
+
+    rc = fcntl(fd, F_SETLKW, &l);
     return rc;
 }
 
-void fcntl_destory(int fd) {
+void fcntl_destroy(int fd) {
     close(fd);
 }

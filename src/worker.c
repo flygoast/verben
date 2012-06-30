@@ -48,8 +48,8 @@ void worker_process_cycle(void *data) {
         ret = shmq_pop(recv_queue, (void **)&msg, &msg_len, 
                     SHMQ_WAIT|SHMQ_LOCK);
         if (ret < 0) {
-            ERROR_LOG("shmq_pop from recv_queue in worker[%d] failed",
-                    getpid());
+            ERROR_LOG("shmq_pop from recv_queue in worker[%d] failed:%s",
+                    getpid(), strerror(errno));
             if (msg) free(msg);
             continue;
         } else if (ret == 1) {
@@ -60,6 +60,7 @@ void worker_process_cycle(void *data) {
         ret = dll.handle_process((char*)msg + sizeof(shm_msg),
                 msg_len - sizeof(shm_msg),
                 &retdata, &retlen, msg->remote_ip, msg->remote_port);
+        /* Worker processes don't modify the message header segment. */
         temp_msg = (shm_msg*)realloc(msg, sizeof(shm_msg) + retlen);
         if (!temp_msg) {
             FATAL_LOG("Out of memory");

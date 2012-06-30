@@ -7,7 +7,13 @@
 #include <time.h>
 #include <sys/mman.h>
 #include "atomic.h"
-#define PTHREAD_LOCK_MODE
+/* You can choose your prefer lock type.
+ * #define PTHREAD_LOCK_MODE
+ * #define SYSVSEM_LOCK_MODE
+ * #define FCNTL_LOCK_MODE
+ */
+
+#define SYSVSEM_LOCK_MODE
 #include "lock.h"
 #include "shmq.h"
 
@@ -27,7 +33,9 @@
 
 #define OPT_LOCK(l, flag)  do { \
     if ((l) && (flag & SHMQ_LOCK)) { \
-        LOCK_LOCK(l); \
+        if (LOCK_LOCK(l) != 0) { \
+            return -1; \
+        } \
     } \
 } while (0)
 
@@ -61,7 +69,9 @@ struct shm_queue {
 static int shmq_stop = 0;
 
 static int shmq_header_init(shmq_t *q) {
-    LOCK_INIT(&q->addr->lock);
+    if (LOCK_INIT(&q->addr->lock) != 0) {
+        return -1;
+    }
     q->addr->head = q->start;
     q->addr->tail = q->start;
     atomic_set(&(q->addr->blk_cnt), 0);
@@ -328,7 +338,8 @@ int main(int argc, char *argv[]) {
         } else if (pid == 0) {
             printf("PID:%d, PPID:%d\n", getpid(), getppid());
             while (1) {
-                if (shmq_pop(q, (void*)&result, &len, SHMQ_WAIT | SHMQ_LOCK) < 0) {
+                if (shmq_pop(q, (void*)&result, &len, 
+                            SHMQ_WAIT | SHMQ_LOCK) < 0) {
                     fprintf(stderr, "shmq_pop failed\n");
                     exit(1);
                 }
@@ -344,9 +355,9 @@ int main(int argc, char *argv[]) {
     while (1) {
         if (shmq_push(q, msg, sizeof(*msg) + 7, SHMQ_WAIT) < 0) {
             fprintf(stderr, "shmq_push failed\n");
-            printf("start:%ld, head:%d, tail:%d\n", q->start,
-                    q->addr->head,
-                    q->addr->tail);
+            printf("start:%ld, head:%ld, tail:%ld\n", (long)(q->start),
+                    (long)(q->addr->head),
+                    (long)(q->addr->tail));
             exit(1);
         }
     }
