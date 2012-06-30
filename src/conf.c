@@ -110,6 +110,7 @@ int conf_init(conf_t *conf, const char *filename) {
     int n;
     int ret = 0;
     FILE *fp;
+    DIR *dir = NULL;
     char buf[MAX_LINE];
     conf_entry_t *pentry;
     conf_entry_t **ptemp;
@@ -146,7 +147,6 @@ int conf_init(conf_t *conf, const char *filename) {
                 char basec[256];
                 char *dname;
                 char *bname;
-                DIR *dir;
                 struct dirent *entry;
                 int rc;
 
@@ -210,6 +210,8 @@ int conf_init(conf_t *conf, const char *filename) {
                         goto error;
                     }
                 }
+                closedir(dir);
+                dir = NULL;
                 continue;
             }
             
@@ -237,8 +239,12 @@ int conf_init(conf_t *conf, const char *filename) {
             conf->list[conf->size++] = pentry;
         }
     }
+
 error:
     fclose(fp);
+    if (dir) {
+        closedir(dir);
+    }
     if (ret == -1) {
         conf_free(conf);
     }

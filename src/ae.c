@@ -54,7 +54,20 @@ ae_event_loop *ae_create_event_loop(void) {
 }
 
 void ae_free_event_loop(ae_event_loop *el) {
+    ae_time_event *te, *next;
     ae_api_free(el);
+
+    /* Delete all time event to avoid memory leak. */
+    te = el->time_event_head;
+    while (te) {
+        next = te->next;
+        if (te->finalizer_proc) {
+            te->finalizer_proc(el, te->client_data);
+        }
+        free(te);
+        te = next;
+    }
+
     free(el);
 }
 
