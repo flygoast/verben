@@ -9,9 +9,12 @@
 #include <fnmatch.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include "hash.h"
 #include "conf.h"
 
-#define CONF_SLOTS_INITIAL_NUM      100
+#define CONF_TYPE_ARRAY             1
+#define CONF_TYPE_BLOCK             2
+
 #define MAX_LINE                    1024
 
 /* "\t\n\r " */
@@ -103,6 +106,41 @@ static int str2int(const char *strval, int def) {
     return ret;
 }
 
+
+static void *key_dup(const void *key) {
+    return strdup((char *)key);
+}
+
+static int key_cmp(const void *key1, 
+        const void *key2) {
+    return strcmp((char *)key1, (char *)key2) == 0;
+}
+
+static void free_key(void *key) {
+    free(key);
+}
+
+static void free_val(void *val) {
+    conf_value_t *cv = (conf_value_t *)val;
+    conf_entry_t *he, *next;
+    if (cv->type == CONF_TYPE_ARRAY) {
+        he = (conf_entry_t *)cv->value;
+        while (he) {
+            next = he->next;
+            free(he->value);
+            free(he);
+            he = next;
+        }
+        free(cv);
+    } else if (cv->type == CONF_TYPE_BLOCK) {
+        /* TODO */
+        exit(1);
+    } else {
+        /* never get here */
+        exit (1);
+    }
+}
+
 /* Before calling this function first time, please
  * initialize the `conf_t' structure with zero. 
  * such as 'conf_t conf = {};' */
@@ -112,11 +150,10 @@ int conf_init(conf_t *conf, const char *filename) {
     FILE *fp;
     DIR *dir = NULL;
     char buf[MAX_LINE];
-    conf_entry_t *pentry;
-    conf_entry_t **ptemp;
     unsigned char *field[2];
     char resolved_path1[PATH_MAX];
     char resolved_path2[PATH_MAX];
+    conf_value_t *cv;
 
     if (!realpath(filename, resolved_path1)) {
         fprintf(stderr, "%s\n", strerror(errno));
@@ -128,9 +165,18 @@ int conf_init(conf_t *conf, const char *filename) {
         return -1;
     }
 
-    if (!conf->list) {
-        conf->size = 0;
-        conf->slots = 0;
+    if (!conf->ht) {
+        conf->ht = hash_create(HASH_INIT_SLOTS);
+        if (!conf->ht) {
+            perror("hash_create failed");
+            return -1;
+        }
+
+        HASH_SET_KEYCPY(conf->ht, key_dup);
+        /* HASH_SET_VALCPY(conf->ht, val_dup); */
+        HASH_SET_FREE_KEY(conf->ht, free_key);
+        HASH_SET_FREE_VAL(conf->ht, free_val);
+        HASH_SET_KEYCMP(conf->ht, key_cmp);
     }
  
     while (fgets(buf, MAX_LINE, fp)) {
@@ -215,28 +261,49 @@ int conf_init(conf_t *conf, const char *filename) {
                 continue;
             }
             
-            pentry = (conf_entry_t*)malloc(sizeof(conf_entry_t));
-            if (!pentry) {
-                fprintf(stderr, "malloc failed\n");
-                ret = -1;
-                goto error;
-            }
-            pentry->key = strdup((char *)field[0]);
-            pentry->value = strdup((char *)field[1]);
+            /* process a key/value config */
+            cv = (conf_value_t*)hash_get_val(conf->ht, (void *)field[0]);
+            if (!cv) {
+                conf_entry_t *ce;
 
-            if (conf->size == conf->slots) {
-                ptemp = (conf_entry_t **)realloc(conf->list, 
-                    sizeof(conf_entry_t*) *
-                    (conf->slots + CONF_SLOTS_INITIAL_NUM));
-                if (!ptemp) {
-                    fprintf(stderr, "realloc failed\n");
+                ce = calloc(1, sizeof(conf_entry_t));
+                if (!ce) {
                     ret = -1;
                     goto error;
                 }
-                conf->list = ptemp;
-                conf->slots += CONF_SLOTS_INITIAL_NUM;
+                ce->value = strdup((char *)field[1]);
+                ce->next = NULL;
+
+                cv = calloc(1, sizeof(conf_value_t));
+                if (!cv) {
+                    free(ce);
+                    ret = -1;
+                    goto error;
+                }
+                cv->type = CONF_TYPE_ARRAY;
+                cv->value = ce;
+                if (hash_insert(conf->ht, (void *)field[0], cv) != 0) {
+                    free(ce);
+                    free(cv);
+                    ret = -1;
+                    goto error;
+                }
+            } else {
+                if (cv->type == CONF_TYPE_ARRAY) {
+                    conf_entry_t *ce;
+                    ce = calloc(1, sizeof(conf_entry_t));
+                    if (!ce) {
+                        ret = -1;
+                        goto error;
+                    }
+                    ce->value = strdup((char *)field[1]);
+                    ce->next = (conf_entry_t*)(cv->value);
+                    cv->value = ce;
+                } else {
+                    ret = -1;
+                    goto error;
+                }
             }
-            conf->list[conf->size++] = pentry;
         }
     }
 
@@ -253,37 +320,28 @@ error:
 
 
 void conf_free(conf_t *conf) {
-    int i;
-    for (i = 0; i < conf->size; ++i) {
-        if (conf->list[i]) {
-            free(conf->list[i]);
-            conf->list[i] = NULL;
-        } else {
-            break;
-        }
-    }
-    free(conf->list);
-}
-
-void conf_dump(conf_t *conf) {
-    int i = 0;
-    for (i = 0; i < conf->size; ++i) {
-        if (conf->list[i]) {
-            printf("%-30s %-20s\n", conf->list[i]->key,
-                    conf->list[i]->value);
-        } else {
-            break;
-        }
-    }
+    hash_free(conf->ht);
 }
 
 /* When key not found in conf, default value was returned. */
 int conf_get_int_value(conf_t *conf, const char *key, int def) {
-    int i;
-    for (i = 0; i < conf->size; ++i) {
-        if (!strcasecmp(key, conf->list[i]->key)) {
-            return str2int(conf->list[i]->value, def);
-        }
+    conf_entry_t *ce;
+    conf_value_t *cv = (conf_value_t*)hash_get_val(conf->ht, key);
+
+    if (!cv) {
+        return def;
+    }
+
+    if (cv->type == CONF_TYPE_BLOCK) {
+        return def;
+    } else if (cv->type == CONF_TYPE_ARRAY) {
+        ce = (conf_entry_t *)cv->value;
+    } else {
+        return def;
+    }
+
+    if (ce) {
+        return str2int(ce->value, def);
     }
 
     return def;
@@ -292,40 +350,95 @@ int conf_get_int_value(conf_t *conf, const char *key, int def) {
 /* When key not found in conf, default value was returned. */
 char * conf_get_str_value(conf_t *conf, const char *key, 
         char *def) {
-    int i;
-    for (i = 0; i < conf->size; ++i) {
-        if (!strcasecmp(key, conf->list[i]->key)) {
-            return conf->list[i]->value;
-        }
+    conf_entry_t *ce;
+    conf_value_t *cv = (conf_value_t*)hash_get_val(conf->ht, key);
+
+    if (!cv) {
+        return def;
+    }
+
+    if (cv->type == CONF_TYPE_BLOCK) {
+        return def;
+    } else if (cv->type == CONF_TYPE_ARRAY) {
+        ce = (conf_entry_t *)cv->value;
+    } else {
+        return def;
+    }
+
+    if (ce) {
+        return ce->value;
     }
 
     return def;
 }
 
+int conf_array_foreach(conf_t *conf,
+        char *key,
+        int (*foreach)(void *key, void *value, void *userptr),
+        void *userptr) {
+    conf_entry_t *ce, *next;
+    conf_value_t *cv = (conf_value_t*)hash_get_val(conf->ht, key);
+
+    if (!cv) {
+        return -1;
+    }
+
+    if (cv->type == CONF_TYPE_BLOCK) {
+        return -1;
+    } else if (cv->type == CONF_TYPE_ARRAY) {
+        ce = (conf_entry_t *)cv->value;
+        while (ce) {
+            next = ce->next;
+            if (foreach(key, ce->value, userptr) != 0) {
+                return -1;
+            }
+            ce = next;
+        }
+        return 0;
+    } else {
+        return -1;
+    }
+}
+
+static int print_conf(void *key, void *value, void *userptr) {
+    printf("%-20s %-30s\n", (char *)key, (char *)value);
+    return 0;
+}
+
+static int conf_print_foreach(const hash_entry_t *he, void *userptr) {
+    conf_value_t * cv = (conf_value_t*)he->val;
+    if (cv->type == CONF_TYPE_ARRAY) {
+        return conf_array_foreach((conf_t*)userptr, he->key,  
+                print_conf, NULL);
+    } else {
+        return 0;
+    }
+}
+
+void conf_dump(conf_t *conf) {
+    hash_foreach(conf->ht, conf_print_foreach, (void *)conf);
+}
+
 #ifdef CONF_TEST_MAIN
-/* gcc conf.c -DCONF_TEST_MAIN -I../inc */
+/* gcc conf.c hash.c -DCONF_TEST_MAIN -I../inc */
 int main(int argc, char *argv[]) {
     conf_t   conf = {};
-    int i;
-//    char test[] = "a#sys1.dev.corp.qihoo.net#1#fenggu_test#6#>#1#2#0.1";
-    unsigned char test[] = "a#votdb1.ipt.dxt.qihoo.net#160#add_agent_mon#25#ROOT_URATE#>#3#1#6#0#根分区使用率";
-    unsigned char *field[12];
+
+    if (argc < 2) {
+        fprintf(stderr, "usage: ./a.out <conf_file>\n");
+        exit(1);
+    }
 
     if (conf_init(&conf, argv[1]) != 0) {
         fprintf(stderr, "conf_init error\n");
         exit(1);
     }
     conf_dump(&conf);
+
+    printf("PORT: %d\n", conf_get_int_value(&conf, "porta", 7777));
+    printf("LOG_NAME: %s\n", conf_get_str_value(&conf, "log_name", "NULL"));
+
     conf_free(&conf);
-
-    if (str_explode("#", test, field, 12) != 12) {
-        fprintf(stderr, "str_explode failed");
-        exit(1);
-    }
-
-    for (i = 0; i < 12; i++) {
-        printf("%d:%s\n", i, field[i]);
-    }
     exit(0);
 }
 #endif /* CONF_TEST_MAIN */

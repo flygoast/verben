@@ -4,7 +4,7 @@ CFLAGS  = $(DEBUG) -Wall
 LIB 	= -ldl -rdynamic -lpthread
 INC     = -I../inc
 VERBENOO = verben.o dll.o log.o conf.o lock.o shmq.o notifier.o \
-      anet.o dlist.o worker.o conn.o ae.o sds.o daemon.o
+      anet.o dlist.o worker.o conn.o ae.o sds.o daemon.o hash.o
 BENCHOO = echo_benchmark.o dlist.o ae.o sds.o anet.o
 VERBEN = verben
 BENCH = echo_benchmark
@@ -22,6 +22,7 @@ install:
 
 #deps
 shmq.o: lock.c shmq.c
+conf.o: hash.c conf.c
 
 .c.o:
 	$(CC) $(CFLAGS) $< -c -o $@ $(INC)
