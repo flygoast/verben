@@ -159,10 +159,12 @@ static int conf_parse_include(conf_t *conf, char *cur_file,
 
     if (!strcmp(bname, ".") || !strcmp(bname, "..") 
             || !strcmp(bname, "/")) {
+        fprintf(stderr, "invalid include directive: %s\n", inc_file);
         return -1;
     }
 
     if (!(dir = opendir(dname))) {
+        fprintf(stderr, "opendir %s failed:%s\n", dname, strerror(errno));
         return -1;
     }
                 
@@ -175,6 +177,8 @@ static int conf_parse_include(conf_t *conf, char *cur_file,
 #else
         struct stat st;
         if (lstat((const char *)entry->d_name, &st) != 0) {
+            fprintf(stderr, "lstat %s failed: %s\n",
+                    entry->d_name, strerror(errno));
             ret = -1;
             break;
         }
@@ -187,7 +191,8 @@ static int conf_parse_include(conf_t *conf, char *cur_file,
             entry->d_name);
 
         if (!realpath(fullpath, resolved_path)) {
-            fprintf(stderr, "%s\n", strerror(errno));
+            fprintf(stderr, "realpath %s failed:%s\n", 
+                    fullpath, strerror(errno));
             ret = -1;
             break;
         }
