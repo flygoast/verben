@@ -12,7 +12,7 @@
 #include "hash.h"
 #include "conf.h"
 
-#define CONF_TYPE_ARRAY             1
+#define CONF_TYPE_ENTRY             1
 #define CONF_TYPE_BLOCK             2
 
 #define MAX_LINE                    1024
@@ -123,7 +123,7 @@ static void free_key(void *key) {
 static void free_val(void *val) {
     conf_value_t *cv = (conf_value_t *)val;
     conf_entry_t *he, *next;
-    if (cv->type == CONF_TYPE_ARRAY) {
+    if (cv->type == CONF_TYPE_ENTRY) {
         he = (conf_entry_t *)cv->value;
         while (he) {
             next = he->next;
@@ -141,6 +141,79 @@ static void free_val(void *val) {
     }
 }
 
+static int conf_parse_include(conf_t *conf, char *cur_file, 
+        char *inc_file) {
+    char dirc[PATH_MAX];
+    char basec[PATH_MAX];
+    char *dname;
+    char *bname;
+    DIR *dir = NULL;
+    struct dirent *entry;
+    int ret = 0, rc;
+    char resolved_path[PATH_MAX];
+
+    strncpy(dirc, (const char *)inc_file, PATH_MAX);
+    strncpy(basec, (const char *)inc_file, PATH_MAX);
+    dname = dirname(dirc);
+    bname = basename(basec);
+
+    if (!strcmp(bname, ".") || !strcmp(bname, "..") 
+            || !strcmp(bname, "/")) {
+        return -1;
+    }
+
+    if (!(dir = opendir(dname))) {
+        return -1;
+    }
+                
+    while ((entry = readdir(dir))) {
+        char fullpath[PATH_MAX];
+#ifdef _DIRENT_HAVE_D_TYPE
+        if (entry->d_type == DT_DIR) {
+            continue;
+        }
+#else
+        struct stat st;
+        if (lstat((const char *)entry->d_name, &st) != 0) {
+            ret = -1;
+            break;
+        }
+
+        if (S_ISDIR(st.st_mode)) {
+            continue;
+        }
+#endif /* _DIRENT_HAVE_D_TYPE */
+        snprintf(fullpath, PATH_MAX - 1, "%s/%s", dname, 
+            entry->d_name);
+
+        if (!realpath(fullpath, resolved_path)) {
+            fprintf(stderr, "%s\n", strerror(errno));
+            ret = -1;
+            break;
+        }
+
+        if (!strcmp(cur_file, resolved_path)) {
+            /* skip the current file */
+            continue;
+        }
+
+        if (!(rc = fnmatch(bname, entry->d_name, 
+                        FNM_PATHNAME | FNM_PERIOD))) {
+            if (conf_init(conf, (const char *)fullpath) != 0) {
+                ret = -1;
+                break;
+            }
+        } else if (rc == FNM_NOMATCH) {
+            continue;
+        } else {
+            ret = -1;
+            break;
+        }
+    }
+    closedir(dir);
+    return ret;
+}
+
 /* Before calling this function first time, please
  * initialize the `conf_t' structure with zero. 
  * such as 'conf_t conf = {};' */
@@ -148,14 +221,12 @@ int conf_init(conf_t *conf, const char *filename) {
     int n;
     int ret = 0;
     FILE *fp;
-    DIR *dir = NULL;
     char buf[MAX_LINE];
     unsigned char *field[2];
-    char resolved_path1[PATH_MAX];
-    char resolved_path2[PATH_MAX];
+    char resolved_path[PATH_MAX];
     conf_value_t *cv;
 
-    if (!realpath(filename, resolved_path1)) {
+    if (!realpath(filename, resolved_path)) {
         fprintf(stderr, "%s\n", strerror(errno));
         return -1;
     }
@@ -189,75 +260,11 @@ int conf_init(conf_t *conf, const char *filename) {
                     (unsigned char*)buf, field, 2) == 2) {
             /* Process `include' directive. */
             if (!strcmp((char *)field[0], "include")) {
-                char dirc[256];
-                char basec[256];
-                char *dname;
-                char *bname;
-                struct dirent *entry;
-                int rc;
-
-                strncpy(dirc, (const char *)field[1], 255);
-                strncpy(basec, (const char *)field[1], 255);
-                dname = dirname(dirc);
-                bname = basename(basec);
-
-                if (!strcmp(bname, ".") || !strcmp(bname, "..") 
-                        || !strcmp(bname, "/")) {
+                if (conf_parse_include(conf, resolved_path, 
+                            (char *)field[1])) {
                     ret = -1;
                     goto error;
                 }
-
-                if (!(dir = opendir(dname))) {
-                    ret = -1;
-                    goto error;
-                }
-                
-                while ((entry = readdir(dir))) {
-                    char fullpath[256];
-#ifdef _DIRENT_HAVE_D_TYPE
-                    if (entry->d_type == DT_DIR) {
-                        continue;
-                    }
-#else
-                    struct stat st;
-                    if (lstat((const char *)entry->d_name, &st) != 0) {
-                        ret = -1;
-                        goto error;
-                    }
-
-                    if (S_ISDIR(st.st_mode)) {
-                        continue;
-                    }
-#endif /* _DIRENT_HAVE_D_TYPE */
-                    snprintf(fullpath, 255, "%s/%s", dname, 
-                        entry->d_name);
-
-                    if (!realpath(fullpath, resolved_path2)) {
-                        fprintf(stderr, "%s\n", strerror(errno));
-                        ret = -1;
-                        goto error;
-                    }
-
-                    if (!strcmp(resolved_path1, resolved_path2)) {
-                        /* skip the same file */
-                        continue;
-                    }
-
-                    if (!(rc = fnmatch(bname, entry->d_name, 
-                                    FNM_PATHNAME | FNM_PERIOD))) {
-                        if (conf_init(conf, (const char *)fullpath) != 0) {
-                            ret = -1;
-                            goto error;
-                        }
-                    } else if (rc == FNM_NOMATCH) {
-                        continue;
-                    } else {
-                        ret = -1;
-                        goto error;
-                    }
-                }
-                closedir(dir);
-                dir = NULL;
                 continue;
             }
             
@@ -280,7 +287,7 @@ int conf_init(conf_t *conf, const char *filename) {
                     ret = -1;
                     goto error;
                 }
-                cv->type = CONF_TYPE_ARRAY;
+                cv->type = CONF_TYPE_ENTRY;
                 cv->value = ce;
                 if (hash_insert(conf->ht, (void *)field[0], cv) != 0) {
                     free(ce);
@@ -289,7 +296,7 @@ int conf_init(conf_t *conf, const char *filename) {
                     goto error;
                 }
             } else {
-                if (cv->type == CONF_TYPE_ARRAY) {
+                if (cv->type == CONF_TYPE_ENTRY) {
                     conf_entry_t *ce;
                     ce = calloc(1, sizeof(conf_entry_t));
                     if (!ce) {
@@ -309,9 +316,6 @@ int conf_init(conf_t *conf, const char *filename) {
 
 error:
     fclose(fp);
-    if (dir) {
-        closedir(dir);
-    }
     if (ret == -1) {
         conf_free(conf);
     }
@@ -334,7 +338,7 @@ int conf_get_int_value(conf_t *conf, const char *key, int def) {
 
     if (cv->type == CONF_TYPE_BLOCK) {
         return def;
-    } else if (cv->type == CONF_TYPE_ARRAY) {
+    } else if (cv->type == CONF_TYPE_ENTRY) {
         ce = (conf_entry_t *)cv->value;
     } else {
         return def;
@@ -359,7 +363,7 @@ char * conf_get_str_value(conf_t *conf, const char *key,
 
     if (cv->type == CONF_TYPE_BLOCK) {
         return def;
-    } else if (cv->type == CONF_TYPE_ARRAY) {
+    } else if (cv->type == CONF_TYPE_ENTRY) {
         ce = (conf_entry_t *)cv->value;
     } else {
         return def;
@@ -385,7 +389,7 @@ int conf_array_foreach(conf_t *conf,
 
     if (cv->type == CONF_TYPE_BLOCK) {
         return -1;
-    } else if (cv->type == CONF_TYPE_ARRAY) {
+    } else if (cv->type == CONF_TYPE_ENTRY) {
         ce = (conf_entry_t *)cv->value;
         while (ce) {
             next = ce->next;
@@ -407,7 +411,7 @@ static int print_conf(void *key, void *value, void *userptr) {
 
 static int conf_print_foreach(const hash_entry_t *he, void *userptr) {
     conf_value_t * cv = (conf_value_t*)he->val;
-    if (cv->type == CONF_TYPE_ARRAY) {
+    if (cv->type == CONF_TYPE_ENTRY) {
         return conf_array_foreach((conf_t*)userptr, he->key,  
                 print_conf, NULL);
     } else {
