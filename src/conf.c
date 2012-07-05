@@ -133,8 +133,14 @@ static void free_val(void *val) {
         }
         free(cv);
     } else if (cv->type == CONF_TYPE_BLOCK) {
-        /* TODO */
-        exit(1);
+        conf_block_t *next_cb, *cb = (conf_block_t*)(cv->value);
+        while (cb) {
+            next_cb = cb->next;
+            conf_free(&cb->block);
+            free(cb);
+            cb = next_cb;
+        }
+        free(cv);
     } else {
         /* never get here */
         exit (1);
@@ -219,27 +225,13 @@ static int conf_parse_include(conf_t *conf, char *cur_file,
     return ret;
 }
 
-/* Before calling this function first time, please
- * initialize the `conf_t' structure with zero. 
- * such as 'conf_t conf = {};' */
-int conf_init(conf_t *conf, const char *filename) {
+static int conf_parse(conf_t *conf, char *resolved_path, 
+        FILE *fp, int block) {
     int n;
     int ret = 0;
-    FILE *fp;
     char buf[MAX_LINE];
     unsigned char *field[2];
-    char resolved_path[PATH_MAX];
     conf_value_t *cv;
-
-    if (!realpath(filename, resolved_path)) {
-        fprintf(stderr, "%s\n", strerror(errno));
-        return -1;
-    }
-
-    if (!(fp = fopen(filename, "r"))) {
-        perror("fopen failed");
-        return -1;
-    }
 
     if (!conf->ht) {
         conf->ht = hash_create(HASH_INIT_SLOTS);
@@ -249,7 +241,6 @@ int conf_init(conf_t *conf, const char *filename) {
         }
 
         HASH_SET_KEYCPY(conf->ht, key_dup);
-        /* HASH_SET_VALCPY(conf->ht, val_dup); */
         HASH_SET_FREE_KEY(conf->ht, free_key);
         HASH_SET_FREE_VAL(conf->ht, free_val);
         HASH_SET_KEYCMP(conf->ht, key_cmp);
@@ -261,8 +252,11 @@ int conf_init(conf_t *conf, const char *filename) {
             buf[n - 1] = '\0';
         }
 
-        if (*buf != '#' && str_explode(NULL, 
-                    (unsigned char*)buf, field, 2) == 2) {
+        if (*buf == '#') {
+            continue;
+        } else if (str_explode(NULL, (unsigned char*)buf, field, 2) == 2) {
+            int is_block = 0;
+
             /* Process `include' directive. */
             if (!strcmp((char *)field[0], "include")) {
                 if (conf_parse_include(conf, resolved_path, 
@@ -273,36 +267,62 @@ int conf_init(conf_t *conf, const char *filename) {
                 continue;
             }
             
+            if (!strcmp((char *)field[1], "{")) {
+                is_block = 1;   /* meet a block */
+            }
+
             /* process a key/value config */
             cv = (conf_value_t*)hash_get_val(conf->ht, (void *)field[0]);
             if (!cv) {
-                conf_entry_t *ce;
-
-                ce = calloc(1, sizeof(conf_entry_t));
-                if (!ce) {
-                    ret = -1;
-                    goto error;
-                }
-                ce->value = strdup((char *)field[1]);
-                ce->next = NULL;
-
+                /* Add a conf value */
                 cv = calloc(1, sizeof(conf_value_t));
                 if (!cv) {
-                    free(ce);
                     ret = -1;
                     goto error;
                 }
-                cv->type = CONF_TYPE_ENTRY;
-                cv->value = ce;
+
                 if (hash_insert(conf->ht, (void *)field[0], cv) != 0) {
-                    free(ce);
                     free(cv);
                     ret = -1;
                     goto error;
                 }
+ 
+                if (is_block) {
+                    conf_block_t *cb = NULL;
+                    cb = calloc(1, sizeof(conf_block_t));
+                    if (!cb) {
+                        ret = -1;
+                        goto error;
+                    }
+
+                    if (conf_parse(&cb->block, resolved_path, fp, 1) != 0) {
+                        free(cb);
+                        ret = -1;
+                        goto error;
+                    }
+                    cb->next = NULL;
+                    cv->type = CONF_TYPE_BLOCK;
+                    cv->value = (void *)cb;
+                } else {
+                    conf_entry_t *ce = NULL;
+                    ce = calloc(1, sizeof(conf_entry_t));
+                    if (!ce) {
+                        ret = -1;
+                        goto error;
+                    }
+                    ce->value = strdup((char *)field[1]);
+                    ce->next = NULL;
+                    cv->type = CONF_TYPE_ENTRY;
+                    cv->value = ce;
+                }
             } else {
                 if (cv->type == CONF_TYPE_ENTRY) {
                     conf_entry_t *ce;
+                    if (is_block) {
+                        ret = -1;
+                        goto error;
+                    }
+
                     ce = calloc(1, sizeof(conf_entry_t));
                     if (!ce) {
                         ret = -1;
@@ -312,6 +332,32 @@ int conf_init(conf_t *conf, const char *filename) {
                     ce->next = (conf_entry_t*)(cv->value);
                     cv->value = ce;
                 } else {
+                    conf_block_t *cb = NULL;
+                    if (!is_block) {
+                        ret = -1;
+                        goto error;
+                    }
+
+                    cb = calloc(1, sizeof(conf_block_t));
+                    if (!cb) {
+                        ret = -1;
+                        goto error;
+                    }
+
+                    if (conf_parse(&cb->block, resolved_path, fp, 1) != 0) {
+                        free(cb);
+                        ret = -1;
+                        goto error;
+                    }
+                    cb->next = (conf_block_t *)(cv->value);
+                    cv->value = cb;
+                }
+            }
+        } else {
+            if (field[0] && field[0][0] == '}') {
+                if (block) {
+                    return 0;
+                } else {
                     ret = -1;
                     goto error;
                 }
@@ -320,11 +366,35 @@ int conf_init(conf_t *conf, const char *filename) {
     }
 
 error:
-    fclose(fp);
     if (ret == -1) {
         conf_free(conf);
     }
     return ret;
+}
+
+/* Before calling this function first time, please
+ * initialize the `conf_t' structure with zero. 
+ * such as 'conf_t conf = {};' */
+int conf_init(conf_t *conf, const char *filename) {
+    FILE *fp;
+    char resolved_path[PATH_MAX];
+
+    if (!realpath(filename, resolved_path)) {
+        fprintf(stderr, "%s\n", strerror(errno));
+        return -1;
+    }
+
+    if (!(fp = fopen(filename, "r"))) {
+        perror("fopen failed");
+        return -1;
+    }
+
+    if (conf_parse(conf, resolved_path, fp, 0) != 0) {
+        fclose(fp);
+        return -1;
+    } 
+    fclose(fp);
+    return 0;
 }
 
 
@@ -381,6 +451,44 @@ char * conf_get_str_value(conf_t *conf, const char *key,
     return def;
 }
 
+conf_block_t *conf_get_block(conf_t *conf, char *key) {
+    conf_value_t *cv = (conf_value_t *)hash_get_val(conf->ht, key);
+    if (!cv) {
+        return NULL;
+    }
+
+    if (cv->type != CONF_TYPE_BLOCK) {
+        return NULL;
+    }
+
+    return (conf_block_t *)(cv->value);
+}
+
+int conf_block_foreach(conf_t *conf, char *key,
+        int (*foreach)(void *key, conf_block_t* block, void *userptr),
+        void *userptr) {
+    conf_block_t *cb, *next;
+    conf_value_t *cv = (conf_value_t *)hash_get_val(conf->ht, key);
+    if (!cv) {
+        return -1;
+    }
+
+    if (cv->type != CONF_TYPE_BLOCK) {
+        return -1;
+    }
+
+    cb = (conf_block_t *)cv->value;
+    while (cb) {
+        next = cb->next;
+        if (foreach(key, cb, userptr) != 0) {
+            return -1;
+        }
+        cb = next;
+    }
+
+    return 0;
+}
+
 int conf_array_foreach(conf_t *conf,
         char *key,
         int (*foreach)(void *key, void *value, void *userptr),
@@ -409,6 +517,13 @@ int conf_array_foreach(conf_t *conf,
     }
 }
 
+static int print_block_conf(void *key, conf_block_t *cb, void *userptr) {
+    printf("%s {\n", (char *)key);
+    conf_dump(&cb->block);
+    printf("}\n");
+    return 0;
+}
+
 static int print_conf(void *key, void *value, void *userptr) {
     printf("%-20s %-30s\n", (char *)key, (char *)value);
     return 0;
@@ -419,6 +534,9 @@ static int conf_print_foreach(const hash_entry_t *he, void *userptr) {
     if (cv->type == CONF_TYPE_ENTRY) {
         return conf_array_foreach((conf_t*)userptr, he->key,  
                 print_conf, NULL);
+    } else if (cv->type == CONF_TYPE_BLOCK) {
+        return conf_block_foreach((conf_t*)userptr, he->key,
+                print_block_conf, NULL);
     } else {
         return 0;
     }
