@@ -74,6 +74,8 @@ static int server_cron(ae_event_loop *el, long long id, void *privdate) {
         cli = node->value;
         if (cli->refcount == 0 && client_timeout &&
                 unix_clock - cli->access_time > client_timeout) {
+            DEBUG_LOG("connection %s:%d timeout closed", 
+                    cli->remote_ip, cli->remote_port);
             close_client(cli);
         }
     }
@@ -214,6 +216,7 @@ static void write_to_client(ae_event_loop *el, int fd,
         ae_delete_file_event(el, cli->fd, AE_WRITABLE);
         sdsclear(cli->sendbuf);
         if (cli->close_conn) {
+            DEBUG_LOG("Server close connection");
             close_client(cli);
         }
     } else {
