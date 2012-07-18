@@ -211,7 +211,7 @@ void log_write(int level, const char *fmt, ...) {
         log_level_text[level]);
 
     va_start(ap, fmt);
-    end = vsprintf(log_buffer + pos, fmt, ap);
+    end = vsnprintf(log_buffer + pos, 4096 - pos, fmt, ap);
     va_end(ap);
     log_buffer[end + pos] = '\n';
 
