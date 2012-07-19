@@ -103,7 +103,8 @@ static void read_from_client(ae_event_loop *el, int fd,
             return;
         }
     } else if (nread == 0) {
-        NOTICE_LOG("Client close %s:%d", cli->remote_ip, cli->remote_port);
+        NOTICE_LOG("client close connection %s:%d", 
+                cli->remote_ip, cli->remote_port);
         close_client(cli);
         return;
     }
