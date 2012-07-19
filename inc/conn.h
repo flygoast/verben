@@ -4,9 +4,13 @@
 #include <unistd.h>
 #include "ae.h"
 
-#define CONN_MSG_MAGIC   0x434f4e4e     /* conn */
+#define CONN_MSG_MAGIC      0x567890EF
+#define CONN_MAGIC_DEBUG    0x1234ABCD
 
 typedef struct client_conn {
+#ifdef DEBUG
+    int     magic;
+#endif /* DEBUG */
     int     fd;
     int     close_conn; /* whether close connection after send response */
     int     refcount;   /* number of messages havn't been processed */ 
@@ -20,8 +24,10 @@ typedef struct client_conn {
 
 typedef struct shm_msg {
     client_conn     *cli;
+#ifdef DEBUG
     unsigned int    magic; /* the field just to protect `cli`'s usage to
                               avoid core dump upon some error. */
+#endif /* DEBUG */
     pid_t           pid; /* the field used to check whethe the receiving 
                         * conn process is a new conn process. */
     char            remote_ip[16];

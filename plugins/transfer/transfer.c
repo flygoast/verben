@@ -53,6 +53,7 @@ static int thread_init;
 static int thread_max;
 static int thread_stack;
 
+#ifdef DEBUG
 static long long mstime() {
     struct timeval tv = {};
     long long mst = 0;
@@ -60,6 +61,7 @@ static long long mstime() {
     mst = ((long long)tv.tv_sec) * 1000 + tv.tv_usec / 1000;
     return mst;
 }
+#endif /* DEBUG */
 
 static void load_server_config(conf_t *conf) {
     char *ip;

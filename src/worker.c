@@ -35,7 +35,7 @@ void worker_process_cycle(void *data) {
         }
     }
 
-    redirect_std();
+//    redirect_std();
 
     for ( ; ; ) {
         if (vb_worker_quit) {
@@ -62,6 +62,7 @@ void worker_process_cycle(void *data) {
                 &retdata, &retlen, msg->remote_ip, msg->remote_port);
         /* Worker processes don't modify the message header segment. */
         temp_msg = (shm_msg*)realloc(msg, sizeof(shm_msg) + retlen);
+
         if (!temp_msg) {
             FATAL_LOG("Out of memory");
             exit(0);
@@ -81,6 +82,7 @@ void worker_process_cycle(void *data) {
 
         ret = shmq_push(send_queue, temp_msg, sizeof(shm_msg) + retlen, 
                     SHMQ_WAIT | SHMQ_LOCK);
+
         free(temp_msg);
 
         if (ret < 0) {

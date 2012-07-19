@@ -46,9 +46,11 @@ static void free_client(client_conn *cli) {
 }
 
 static int reduce_client_refcount(client_conn *cli) {
-    if (--cli->refcount < 0) {
+    if (--cli->refcount <= 0 && cli->fd == -1) {
         free_client(cli);
         return -1;
+    } else if (cli->fd != -1) {
+        return 1;
     }
     return 0;
 }
@@ -60,7 +62,10 @@ static void close_client(client_conn *cli) {
     ae_delete_file_event(ael, cli->fd, AE_READABLE);
     ae_delete_file_event(ael, cli->fd, AE_WRITABLE);
     close(cli->fd);
-    reduce_client_refcount(cli);
+    cli->fd = -1;
+    if (cli->refcount <= 0) {
+        free_client(cli);
+    }
 }
 
 static int server_cron(ae_event_loop *el, long long id, void *privdate) {
@@ -74,8 +79,8 @@ static int server_cron(ae_event_loop *el, long long id, void *privdate) {
         cli = node->value;
         if (cli->refcount == 0 && client_timeout &&
                 unix_clock - cli->access_time > client_timeout) {
-            DEBUG_LOG("connection %s:%d timeout closed", 
-                    cli->remote_ip, cli->remote_port);
+            DEBUG_LOG("%p:connection %s:%d timeout closed", 
+                    cli, cli->remote_ip, cli->remote_port);
             close_client(cli);
         }
     }
@@ -90,7 +95,7 @@ static void read_from_client(ae_event_loop *el, int fd,
     char buf[IOBUF_SIZE];
     AE_NOTUSED(el);
     AE_NOTUSED(mask);
-    
+
     nread = read(fd, buf, IOBUF_SIZE);
     cli->access_time = unix_clock;
     if (nread == -1) {
@@ -98,14 +103,14 @@ static void read_from_client(ae_event_loop *el, int fd,
             nread = 0;
             return;
         } else {
-            ERROR_LOG("read failed from connection %s:%d: %s",
-                    cli->remote_ip, cli->remote_port, strerror(errno));
+            ERROR_LOG("%p, read connection %s:%d failed: %s",
+                    cli, cli->remote_ip, cli->remote_port, strerror(errno));
             close_client(cli);
             return;
         }
     } else if (nread == 0) {
-        NOTICE_LOG("client close connection %s:%d", 
-                cli->remote_ip, cli->remote_port);
+        NOTICE_LOG("%p, client close connection %s:%d", 
+                cli, cli->remote_ip, cli->remote_port);
         close_client(cli);
         return;
     }
@@ -122,7 +127,8 @@ static void read_from_client(ae_event_loop *el, int fd,
 
     if (cli->recv_prot_len < 0 || cli->recv_prot_len > MAX_PROT_LEN) {
         /* invalid protocol length */
-        ERROR_LOG("Invalid protocol length:%d", cli->recv_prot_len);
+        ERROR_LOG("%p:Invalid protocol length:%d for connection %s:%d", 
+                cli, cli->recv_prot_len, cli->remote_ip, cli->remote_port);
         close_client(cli);
     } else if (cli->recv_prot_len == 0) {
         /* unknown protocol length */
@@ -133,24 +139,30 @@ static void read_from_client(ae_event_loop *el, int fd,
          * shared memory queue to feed the worker processes. */
         shm_msg *msg = (shm_msg*)malloc(sizeof(*msg) + cli->recv_prot_len);
         if (!msg) {
-            ERROR_LOG("Create message failed for fd %d", cli->fd);
+            ERROR_LOG("%p:create message failed for connection %s:%d", 
+                    cli, cli->remote_ip, cli->remote_port);
             close_client(cli);
             return;
         }
         msg->cli = cli;
         msg->pid = conn_pid;
+#ifdef DEBUG
         msg->magic = CONN_MSG_MAGIC;
+#endif /* DEBUG */
         strncpy(msg->remote_ip, cli->remote_ip, 16);
         msg->remote_port = cli->remote_port;
         memcpy(msg->data, cli->recvbuf, cli->recv_prot_len);
 
         if (shmq_push(recv_queue, msg, 
                     sizeof(*msg) + cli->recv_prot_len, 0) != 0) {
-            ERROR_LOG("shmq push failed for fd:%d", cli->fd);
+            ERROR_LOG("%p:shmq push failed for connection %s:%d", 
+                    cli, cli->remote_ip, cli->remote_port);
             close_client(cli);
             return;
         }
         ++cli->refcount;
+        DEBUG_LOG("%p:connection %s:%d, increase Refcount:%d",
+                cli, cli->remote_ip, cli->remote_port, cli->refcount);
         free(msg);
         cli->recvbuf = sdsrange(cli->recvbuf, cli->recv_prot_len, -1);
         cli->recv_prot_len = 0;
@@ -158,7 +170,7 @@ static void read_from_client(ae_event_loop *el, int fd,
 }
 
 static client_conn *create_client(int cli_fd, char *cli_ip, int cli_port) {
-    client_conn *cli = malloc(sizeof(*cli));
+    client_conn *cli = (client_conn *)malloc(sizeof(*cli));
     if (!cli) {
         ERROR_LOG("create client connection structure failed");
         return NULL;
@@ -169,24 +181,33 @@ static client_conn *create_client(int cli_fd, char *cli_ip, int cli_port) {
 
     if (ae_create_file_event(ael, cli_fd, AE_READABLE,
             read_from_client, cli) == AE_ERR) {
-        ERROR_LOG("Create read file event failed");
+        ERROR_LOG("%p:Create read file event failed for connection:%s:%d",
+                cli, cli_ip, cli_port);
         close(cli_fd);
         free(cli);
         return NULL;
     }
 
+#ifdef DEBUG
+    cli->magic = CONN_MAGIC_DEBUG;
+#endif /* DEBUG */
     cli->fd = cli_fd;
     cli->close_conn = 0;
     cli->refcount = 0;
     cli->recv_prot_len = 0;
     cli->remote_ip = strdup(cli_ip);
     cli->remote_port = cli_port;
+    DEBUG_LOG("%p:Initialize connection %s:%d Refcount:%d",
+            cli, cli->remote_ip, cli->remote_port, cli->refcount);
     cli->recvbuf = sdsempty();
     cli->sendbuf = sdsempty();
     cli->access_time = unix_clock ? unix_clock : time(NULL);
     if (!dlist_add_node_tail(clients, cli)) {
-        ERROR_LOG("Add client node to linked list failed");
-        close(cli_fd);
+        ERROR_LOG("%p:Add client node to linked list failed for connection:%s:%d",
+                cli, cli->remote_ip, cli->remote_port);
+        ae_delete_file_event(ael, cli->fd, AE_READABLE);
+        close(cli->fd);
+        cli->fd = -1;
         free(cli);
         return NULL;
     }
@@ -207,8 +228,8 @@ static void write_to_client(ae_event_loop *el, int fd,
         if (errno == EAGAIN) {
             nwrite = 0;
         } else {
-            ERROR_LOG("write to [%s:%d] failed:%s", cli->remote_ip,
-                    cli->remote_port);
+            ERROR_LOG("%p:write to connection %s:%d failed:%s", 
+                    cli, cli->remote_ip, cli->remote_port);
             close_client(cli);
             return;
         }
@@ -218,7 +239,8 @@ static void write_to_client(ae_event_loop *el, int fd,
         ae_delete_file_event(el, cli->fd, AE_WRITABLE);
         sdsclear(cli->sendbuf);
         if (cli->close_conn) {
-            DEBUG_LOG("Server close connection");
+            DEBUG_LOG("%d:Server close connection:%s:%d",
+                    cli, cli->remote_ip, cli->remote_port);
             close_client(cli);
         }
     } else {
@@ -232,21 +254,23 @@ static void accept_common_handler(int cli_fd, char *cli_ip, int cli_port) {
     int len;
     client_conn *c = create_client(cli_fd, cli_ip, cli_port);
     if (!c) {
-        ERROR_LOG("Allocating resources for client failed");
+        ERROR_LOG("Allocating resources for client %s:%d failed",
+                cli_ip, cli_port);
         close(cli_fd); /* May be already closed, just ignore errors. */
         return;
     }
 
     if (client_limit && dlist_length(clients) > client_limit) {
-        ERROR_LOG("Max number of clients reached");
+        ERROR_LOG("Max number of clients reached, close connection %s:%d",
+                cli_ip, cli_port);
         close_client(c);
         return;
     }
 
     if (dll.handle_open) {
         if (dll.handle_open(&retbuf, &len, cli_ip, cli_port) != 0) {
-            WARNING_LOG("Close socket %d according to handle_open hook",
-                    c->fd);
+            WARNING_LOG("%p:close connection %s:%d according to handle_open",
+                    c, c->remote_ip, c->remote_port);
             close_client(c);
             return;
         } else {
@@ -256,8 +280,9 @@ static void accept_common_handler(int cli_fd, char *cli_ip, int cli_port) {
                 c->sendbuf = sdscatlen(c->sendbuf, retbuf, len);
                 if (ae_create_file_event(ael, c->fd, AE_WRITABLE, 
                             write_to_client, c) == AE_ERR) {
-                    ERROR_LOG("Create write file event failed on fd %d",
-                        c->fd);
+                    ERROR_LOG("%p:create write file event failed on"
+                            " connection %s:%d", 
+                            c, c->remote_ip, c->remote_port);
                     close_client(c);
                 }
             }
@@ -292,7 +317,7 @@ static void notifier_handler(ae_event_loop *el, int fd,
     AE_NOTUSED(el);
     AE_NOTUSED(mask);
     AE_NOTUSED(privdata);
-   
+
     if (notifier_read() <= 0) {
         ERROR_LOG("notifier_read failed:%s", strerror(errno));
         return;
@@ -300,22 +325,37 @@ static void notifier_handler(ae_event_loop *el, int fd,
 
     /* Retrive all processed protocol datagram. */
     while (shmq_pop(send_queue, (void**)&msg, &len, 0) == 0) {
+#ifdef DEBUG
         /* check this to avoid core dump because of invalid cli address */
         if (msg->magic != CONN_MSG_MAGIC) {
-            ERROR_LOG("Invalid message, magic number 0x%08x", 
+            FATAL_LOG("Invalid message, magic number 0x%08x", 
                 msg->magic);
+            /* I want a core dump at here */
+            kill(getpid(), SIGSEGV);
             continue;
         }
+#endif /* DEBUG */
 
         if (conn_pid != msg->pid) {
-            ERROR_LOG("Pid[%d]'s datagram, discarded", msg->pid);
+            ERROR_LOG("pid[%d]'s datagram, discarded", msg->pid);
             continue;
         }
 
         /* It's a valid message. */
         cli = msg->cli;
-        if (reduce_client_refcount(cli) >= 0) {
-            if (msg->close_conn) {
+#ifdef DEBUG
+        if (cli->magic != CONN_MAGIC_DEBUG) {
+            FATAL_LOG("Invalid client pointer: cli:%p", cli);
+            /* I want a core dump at here */
+            kill(getpid(), SIGSEGV);
+            continue;
+        }
+#endif /* DEBUG */
+
+
+        if (reduce_client_refcount(cli) == 1) {
+            /* send the message then close the connection */
+            if (msg->close_conn) {  
                 cli->close_conn = 1;
             } else {
                 cli->close_conn = 0;
@@ -324,11 +364,15 @@ static void notifier_handler(ae_event_loop *el, int fd,
                     len - sizeof(shm_msg));
             if (ae_create_file_event(el, cli->fd, AE_WRITABLE, 
                     write_to_client, cli) == AE_ERR) {
-                ERROR_LOG("Create write file event failed on fd %d",
-                        cli->fd);
+                ERROR_LOG("%p:Create write file event failed on "
+                        "connection %s:%d",
+                        cli, cli->remote_ip, cli->remote_port);
                 close_client(cli);
             }
         }
+
+        DEBUG_LOG("%p:Get response of connection %s:%d, reduce Refcount:%d",
+                cli, cli->remote_ip, cli->remote_port, cli->refcount);
         free(msg);
     }
 }
@@ -366,7 +410,7 @@ void conn_process_cycle(void *data) {
     port = conf_get_int_value(conf, "port", 8773);
     listen_fd = anet_tcp_server(sock_error, host, port);
     if (listen_fd == ANET_ERR) {
-        boot_notify(-1, "Listen socket[%s:%d]:%s",
+        boot_notify(-1, "Listen socket [%s:%d]: %s",
                 host, port, sock_error);
         kill(getppid(), SIGQUIT); /* exit the daemon */
         exit(0);
@@ -400,7 +444,7 @@ void conn_process_cycle(void *data) {
         }
     }
 
-    redirect_std();
+//    redirect_std();
     ae_main(ael);
 
     if (dll.handle_fini) {
