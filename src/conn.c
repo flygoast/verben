@@ -45,16 +45,6 @@ static void free_client(client_conn *cli) {
     dlist_delete_node(clients, ln);
 }
 
-static int reduce_client_refcount(client_conn *cli) {
-    if (--cli->refcount <= 0 && cli->fd == -1) {
-        free_client(cli);
-        return -1;
-    } else if (cli->fd != -1) {
-        return 1;
-    }
-    return 0;
-}
-
 static void close_client(client_conn *cli) {
     if (dll.handle_close) {
         dll.handle_close(cli->remote_ip, cli->remote_port);
@@ -103,13 +93,13 @@ static void read_from_client(ae_event_loop *el, int fd,
             nread = 0;
             return;
         } else {
-            ERROR_LOG("%p, read connection %s:%d failed: %s",
+            ERROR_LOG("%p:read connection %s:%d failed: %s",
                     cli, cli->remote_ip, cli->remote_port, strerror(errno));
             close_client(cli);
             return;
         }
     } else if (nread == 0) {
-        NOTICE_LOG("%p, client close connection %s:%d", 
+        NOTICE_LOG("%p:client close connection %s:%d", 
                 cli, cli->remote_ip, cli->remote_port);
         close_client(cli);
         return;
@@ -203,7 +193,7 @@ static client_conn *create_client(int cli_fd, char *cli_ip, int cli_port) {
     cli->sendbuf = sdsempty();
     cli->access_time = unix_clock ? unix_clock : time(NULL);
     if (!dlist_add_node_tail(clients, cli)) {
-        ERROR_LOG("%p:Add client node to linked list failed for connection:%s:%d",
+        ERROR_LOG("%p:Add client connection %s:%d to list",
                 cli, cli->remote_ip, cli->remote_port);
         ae_delete_file_event(ael, cli->fd, AE_READABLE);
         close(cli->fd);
@@ -352,10 +342,17 @@ static void notifier_handler(ae_event_loop *el, int fd,
         }
 #endif /* DEBUG */
 
-
-        if (reduce_client_refcount(cli) == 1) {
+        if (--cli->refcount <= 0 && cli->fd == -1) {
+            DEBUG_LOG("%p:Get response of connection %s:%d,"
+                    "reduce Refcount:%d",
+                    cli, cli->remote_ip, cli->remote_port, cli->refcount);
+            free_client(cli);
+        } else if (cli->fd != -1) {
             /* send the message then close the connection */
-            if (msg->close_conn) {  
+            DEBUG_LOG("%p:Get response of connection %s:%d,"
+                    "reduce Refcount:%d",
+                    cli, cli->remote_ip, cli->remote_port, cli->refcount);
+            if (msg->close_conn) {
                 cli->close_conn = 1;
             } else {
                 cli->close_conn = 0;
@@ -369,10 +366,8 @@ static void notifier_handler(ae_event_loop *el, int fd,
                         cli, cli->remote_ip, cli->remote_port);
                 close_client(cli);
             }
+            DEBUG_LOG("%p: message content:%s\n", cli, msg->data);
         }
-
-        DEBUG_LOG("%p:Get response of connection %s:%d, reduce Refcount:%d",
-                cli, cli->remote_ip, cli->remote_port, cli->refcount);
         free(msg);
     }
 }
