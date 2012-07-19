@@ -103,7 +103,7 @@ static void read_from_client(ae_event_loop *el, int fd,
             return;
         }
     } else if (nread == 0) {
-        NOTICE_LOG("Client close fd %d", cli->fd);
+        NOTICE_LOG("Client close %s:%d", cli->remote_ip, cli->remote_port);
         close_client(cli);
         return;
     }
@@ -181,7 +181,7 @@ static client_conn *create_client(int cli_fd, char *cli_ip, int cli_port) {
     cli->remote_port = cli_port;
     cli->recvbuf = sdsempty();
     cli->sendbuf = sdsempty();
-    cli->access_time = unix_clock;
+    cli->access_time = unix_clock ? unix_clock : time(NULL);
     if (!dlist_add_node_tail(clients, cli)) {
         ERROR_LOG("Add client node to linked list failed");
         close(cli_fd);
