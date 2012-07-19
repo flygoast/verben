@@ -99,7 +99,7 @@ static void read_from_client(ae_event_loop *el, int fd,
             return;
         } else {
             ERROR_LOG("read failed from connection %s:%d: %s",
-                    cli->remote_ip, remote_port, strerror(errno));
+                    cli->remote_ip, cli->remote_port, strerror(errno));
             close_client(cli);
             return;
         }
