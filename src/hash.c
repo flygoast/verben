@@ -268,6 +268,99 @@ hash_t *hash_dup(hash_t *ht) {
     return copy;
 }
 
+hash_iter_t *hash_iter_new(hash_t *ht) {
+    hash_iter_t *iter = (hash_iter_t *)calloc(1, sizeof(*iter));
+    if (!iter) {
+        return NULL;
+    }
+
+    if (hash_iter_init(iter, ht) != 0) {
+        free(iter);
+        return NULL;
+    }
+    return iter;
+}
+
+int hash_iter_init(hash_iter_t *iter, hash_t *ht) {
+    iter->pos = 0;
+    iter->depth = 0;
+    iter->ht = ht;
+    iter->first = NULL;
+    iter->second = NULL;
+    return hash_iter_next(iter);
+}
+
+int hash_iter_next(hash_iter_iter *iter) {
+    if (iter->he) {
+        if (iter->he->next) {
+            /* there was a collision */
+            iter->he = iter->he->next;
+            iter->key = iter->he->key;
+            iter->value = iter->he->val;
+            ++iter->depth;
+            return 0;
+        } else {
+            ++iter->pos;
+        }
+    }
+    /* reset the depth */
+    iter->depth = 0;
+
+    for ( ; iter->pos < iter->ht->slots; ++iter->pos) {
+        if ((iter->he = iter->ht->data[iter->pos])) {
+            iter->key = iter->iter->key;
+            iter->value = iter->iter->value;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+int hash_iter_prev(hash_iter_t *iter) {
+    unsigned int i;
+
+    if (iter->depth > 0) {
+        for (iter->he = iter->ht->data[iter->pos], i = 0;
+                i < iter->depth; ++i) {
+            iter->he = iter->he->next;
+        }
+        --iter->depth;
+        return 0;
+    }
+
+    for ( ; iter->pos; --iter->pos) {
+        if ((iter->he = iter->ht->data[iter->pos])) {
+            while (iter->he->next) {
+                iter->he = iter->he->next;
+                ++iter->depth;
+            }
+            return 0;
+        }
+    }
+    return -1;
+}
+
+void hash_iter_destroy(hash_iter_t *iter) {
+    iter->pos = 0;
+    iter->depth = 0;
+    iter->ht = NULL;
+    iter->he = NULL;
+    iter->key = NULL;
+    iter->value = NULL;
+}
+
+int hash_iter_reset(hash_iter_t *iter) {
+    hash_t *tmp;
+    tmp = iter->ht;
+    hash_iter_destroy(iter);
+    return hash_iter_init(iter, tmp);
+}
+
+void hash_iter_free(hash_iter_t *iter) {
+    hash_iter_destroy(iter);
+    free(iter);
+}
+
 #ifdef HASH_TEST_MAIN
 static int _hash_print_foreach(const hash_entry_t *he, void *userptr) {
     printf("%s => %s\n", (char *)he->key, (char *)he->val);
@@ -309,6 +402,7 @@ int main(int argc, char *argv[]) {
     int i;
     int len;
     hash_t *ht, *htcpy;
+    hash_iter_t *iter;
 
     srand(time(NULL));
     ht = hash_create(16);
@@ -330,7 +424,13 @@ int main(int argc, char *argv[]) {
     htcpy = hash_dup(ht);
     hash_free(ht);
     printf("================================\n\n\n");
-    hash_dump(htcpy);
+    iter = hash_iter_new(htcpy);
+    assert(iter);
+
+    do {
+        printf("%s=>%s\n", iter->key, iter->value);
+    } while (hash_iter_next(iter) == 0);
+
     hash_free(htcpy);
     exit(0);
 }

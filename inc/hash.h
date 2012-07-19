@@ -66,6 +66,15 @@ typedef struct _hash_t {
     void (*free_val)(void *);
 } hash_t;
 
+typedef struct hash_iter {
+    unsigned int    pos;
+    unsigned int    depth;
+    hash_entry_t    *he;
+    hash_t          *ht;
+    void            *key;
+    void            *value;
+} hash_iter_t;
+
 
 /* create a new hash table */
 hash_t *hash_create(unsigned int slots);
@@ -98,5 +107,26 @@ int hash_resize(hash_t *ht);
 
 /* copy a hash table */
 hash_t *hash_dup(hash_t *ht);
+
+/* create a new hash iterator */
+hash_iter_t *hash_iter_new(hash_t *ht);
+
+/* initialize a new hash iterator */
+int hash_iter_init(hash_iter_t *iter, hash_t *ht);
+
+/* move to the next position in the table */
+int hash_iter_next(hash_iter_t *iter);
+
+/* move to the prev position in the table */
+int hash_iter_prev(hash_iter_t *iter);
+
+/* reset the iter */
+int hash_iter_reset(hash_iter_t *iter);
+
+/* destroy a hash iterator */
+void hash_iter_destroy(hash_iter_t *iter);
+
+/* free a hash iterator */
+void hash_iter_free(hash_iter_t *iter);
 
 #endif /* __HASH_H_INCLUDED__ */
