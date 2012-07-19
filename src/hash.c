@@ -285,12 +285,12 @@ int hash_iter_init(hash_iter_t *iter, hash_t *ht) {
     iter->pos = 0;
     iter->depth = 0;
     iter->ht = ht;
-    iter->first = NULL;
-    iter->second = NULL;
+    iter->key = NULL;
+    iter->value = NULL;
     return hash_iter_next(iter);
 }
 
-int hash_iter_next(hash_iter_iter *iter) {
+int hash_iter_next(hash_iter_t *iter) {
     if (iter->he) {
         if (iter->he->next) {
             /* there was a collision */
@@ -308,8 +308,8 @@ int hash_iter_next(hash_iter_iter *iter) {
 
     for ( ; iter->pos < iter->ht->slots; ++iter->pos) {
         if ((iter->he = iter->ht->data[iter->pos])) {
-            iter->key = iter->iter->key;
-            iter->value = iter->iter->value;
+            iter->key = iter->he->key;
+            iter->value = iter->he->val;
             return 0;
         }
     }
