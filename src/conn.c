@@ -16,6 +16,7 @@
 #include "ae.h"
 #include "log.h"
 #include "conf.h"
+#include "vector.h"
 #include "notifier.h"
 
 #define IOBUF_SIZE      4096
@@ -29,6 +30,12 @@ static int      client_limit;
 static int      client_timeout;
 static time_t   unix_clock;
 static pid_t    conn_pid;
+static vector_t *conn_vec;
+
+static unsigned int generate_conn_id() {
+    static unsigned int id = 0;
+    return id++;
+}
 
 static void free_client_node(void *cli) {
     client_conn *c = (client_conn *)cli;
@@ -184,6 +191,7 @@ static client_conn *create_client(int cli_fd, char *cli_ip, int cli_port) {
     cli->magic = CONN_MAGIC_DEBUG;
 #endif /* DEBUG */
     cli->fd = cli_fd;
+    cli->conn_id = generate_conn_id();
     cli->close_conn = 0;
     cli->refcount = 0;
     cli->recv_prot_len = 0;
@@ -391,6 +399,12 @@ void conn_process_cycle(void *data) {
     vb_process = VB_PROCESS_CONN;
 
     conn_pid = getpid();
+    conn_vec = vector_new(10000, sizeof(int));
+    if (!conn_vec) {
+        boot_notify(-1, "Initialize clients connection vector"); 
+        kill(getppid(), SIGQUIT); /* exit the daemon */
+        exit(0);
+    }
 
     client_limit = conf_get_int_value(conf, "client_limit", 0);
     client_timeout = conf_get_int_value(conf, "client_timeout", 60);
@@ -459,5 +473,6 @@ void conn_process_cycle(void *data) {
 
     ae_free_event_loop(ael);
     dlist_destroy(clients);
+    vector_free(conn_vec);
     exit(0);
 }

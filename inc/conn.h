@@ -11,6 +11,7 @@ typedef struct client_conn {
 #ifdef DEBUG
     int     magic;
 #endif /* DEBUG */
+    int     conn_id;
     int     fd;
     int     close_conn; /* whether close connection after send response */
     int     refcount;   /* number of messages havn't been processed */ 
@@ -24,6 +25,7 @@ typedef struct client_conn {
 
 typedef struct shm_msg {
     client_conn     *cli;
+    unsigned int    conn_id;
 #ifdef DEBUG
     unsigned int    magic; /* the field just to protect `cli`'s usage to
                               avoid core dump upon some error. */
