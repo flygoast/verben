@@ -53,6 +53,8 @@ static void close_client(client_conn *cli) {
     ae_delete_file_event(ael, cli->fd, AE_WRITABLE);
     close(cli->fd);
     cli->fd = -1;
+    DEBUG_LOG("%p: close connection %s:%d, current Refcount:%d, fd:%d",
+            cli, cli->remote_ip, cli->remote_port, cli->refcount, cli->fd);
     if (cli->refcount <= 0) {
         free_client(cli);
     }
@@ -342,31 +344,40 @@ static void notifier_handler(ae_event_loop *el, int fd,
         }
 #endif /* DEBUG */
 
-        if (--cli->refcount <= 0 && cli->fd == -1) {
-            DEBUG_LOG("%p:Get response of connection %s:%d,"
-                    "reduce Refcount:%d",
-                    cli, cli->remote_ip, cli->remote_port, cli->refcount);
-            free_client(cli);
-        } else if (cli->fd != -1) {
-            /* send the message then close the connection */
-            DEBUG_LOG("%p:Get response of connection %s:%d,"
-                    "reduce Refcount:%d",
-                    cli, cli->remote_ip, cli->remote_port, cli->refcount);
-            if (msg->close_conn) {
-                cli->close_conn = 1;
+        --cli->refcount;
+        if (cli->refcount < 0) {
+            FATAL_LOG("%p:Invalid Refcount:%d for connection %s:%d fd:%d",
+                cli, cli->refcount, cli->remote_ip, cli->remote_port, cli->fd);
+            free(msg);
+            kill(getpid(), SIGSEGV);
+        } else {
+            if (cli->fd != -1) {
+                DEBUG_LOG("%p:connection %s:%d fd:%d, Refcount:%d", 
+                    cli, cli->remote_ip, cli->remote_port, 
+                    cli->fd, cli->refcount);
+
+                if (msg->close_conn) {
+                    cli->close_conn = 1;
+                } else {
+                    cli->close_conn = 0;
+                }
+                cli->sendbuf = sdscatlen(cli->sendbuf, msg->data, 
+                        len - sizeof(shm_msg));
+                if (ae_create_file_event(el, cli->fd, AE_WRITABLE, 
+                        write_to_client, cli) == AE_ERR) {
+                    ERROR_LOG("%p:Create write file event failed on "
+                            "connection %s:%d, Refcount:%d, fd:%d",
+                            cli, cli->remote_ip, cli->remote_port, 
+                            cli->refcount, cli->fd);
+                    close_client(cli);
+                }
             } else {
-                cli->close_conn = 0;
+                if (cli->refcount == 0) {
+                    DEBUG_LOG("%p:free connection %s:%d Refcount:%d, fd:%d",
+                        cli, cli->remote_ip, cli, cli->fd);
+                    free_client(cli);
+                }
             }
-            cli->sendbuf = sdscatlen(cli->sendbuf, msg->data, 
-                    len - sizeof(shm_msg));
-            if (ae_create_file_event(el, cli->fd, AE_WRITABLE, 
-                    write_to_client, cli) == AE_ERR) {
-                ERROR_LOG("%p:Create write file event failed on "
-                        "connection %s:%d",
-                        cli, cli->remote_ip, cli->remote_port);
-                close_client(cli);
-            }
-            DEBUG_LOG("%p: message content:%s\n", cli, msg->data);
         }
         free(msg);
     }
