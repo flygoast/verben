@@ -579,7 +579,7 @@ int main(int argc, char *argv[]) {
     pid = pid_file_running(pid_file);
 
     if (daemon_action == DAEMON_START) {
-//        daemonize(1, 1);
+        daemonize(1, 1);
         rlimit_reset();
 
         if (pid == (pid_t)-1) {

@@ -35,7 +35,7 @@ void worker_process_cycle(void *data) {
         }
     }
 
-//    redirect_std();
+    redirect_std();
 
     for ( ; ; ) {
         if (vb_worker_quit) {

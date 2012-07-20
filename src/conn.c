@@ -31,11 +31,7 @@ static int      client_timeout;
 static time_t   unix_clock;
 static pid_t    conn_pid;
 static vector_t *conn_vec;
-
-static unsigned int generate_conn_id() {
-    static unsigned int id = 0;
-    return id++;
-}
+static client_conn *null = NULL;
 
 static void free_client_node(void *cli) {
     client_conn *c = (client_conn *)cli;
@@ -58,13 +54,10 @@ static void close_client(client_conn *cli) {
     }
     ae_delete_file_event(ael, cli->fd, AE_READABLE);
     ae_delete_file_event(ael, cli->fd, AE_WRITABLE);
+    assert(vector_set_at(conn_vec, cli->fd, (void *)&null) == 0);
     close(cli->fd);
     cli->fd = -1;
-    DEBUG_LOG("%p: close connection %s:%d, current Refcount:%d, fd:%d",
-            cli, cli->remote_ip, cli->remote_port, cli->refcount, cli->fd);
-    if (cli->refcount <= 0) {
-        free_client(cli);
-    }
+    free_client(cli);
 }
 
 static int server_cron(ae_event_loop *el, long long id, void *privdate) {
@@ -76,7 +69,7 @@ static int server_cron(ae_event_loop *el, long long id, void *privdate) {
 
     while ((node = dlist_next(&iter))) {
         cli = node->value;
-        if (cli->refcount == 0 && client_timeout &&
+        if (client_timeout &&
                 unix_clock - cli->access_time > client_timeout) {
             DEBUG_LOG("%p:connection %s:%d timeout closed", 
                     cli, cli->remote_ip, cli->remote_port);
@@ -145,6 +138,7 @@ static void read_from_client(ae_event_loop *el, int fd,
         }
         msg->cli = cli;
         msg->pid = conn_pid;
+        msg->fd = cli->fd;
 #ifdef DEBUG
         msg->magic = CONN_MSG_MAGIC;
 #endif /* DEBUG */
@@ -159,9 +153,6 @@ static void read_from_client(ae_event_loop *el, int fd,
             close_client(cli);
             return;
         }
-        ++cli->refcount;
-        DEBUG_LOG("%p:connection %s:%d, increase Refcount:%d",
-                cli, cli->remote_ip, cli->remote_port, cli->refcount);
         free(msg);
         cli->recvbuf = sdsrange(cli->recvbuf, cli->recv_prot_len, -1);
         cli->recv_prot_len = 0;
@@ -191,14 +182,10 @@ static client_conn *create_client(int cli_fd, char *cli_ip, int cli_port) {
     cli->magic = CONN_MAGIC_DEBUG;
 #endif /* DEBUG */
     cli->fd = cli_fd;
-    cli->conn_id = generate_conn_id();
     cli->close_conn = 0;
-    cli->refcount = 0;
     cli->recv_prot_len = 0;
     cli->remote_ip = strdup(cli_ip);
     cli->remote_port = cli_port;
-    DEBUG_LOG("%p:Initialize connection %s:%d Refcount:%d",
-            cli, cli->remote_ip, cli->remote_port, cli->refcount);
     cli->recvbuf = sdsempty();
     cli->sendbuf = sdsempty();
     cli->access_time = unix_clock ? unix_clock : time(NULL);
@@ -212,6 +199,7 @@ static client_conn *create_client(int cli_fd, char *cli_ip, int cli_port) {
         return NULL;
     }
 
+    assert(vector_set_at(conn_vec, cli->fd, (void *)&cli) == 0);
     return cli;
 }
 
@@ -313,6 +301,7 @@ static void notifier_handler(ae_event_loop *el, int fd,
     shm_msg *msg;
     int len;
     client_conn *cli;
+    client_conn **temp;
 
     AE_NOTUSED(el);
     AE_NOTUSED(mask);
@@ -343,49 +332,34 @@ static void notifier_handler(ae_event_loop *el, int fd,
 
         /* It's a valid message. */
         cli = msg->cli;
+        temp = vector_get_at(conn_vec, msg->fd);
+        if (!temp || *temp != cli) {
+            FATAL_LOG("%p:Invalid packet, fd:%d, vector value:%p", 
+                    cli, msg->fd, temp);
+            free(msg);
+            continue;
+        }
+
 #ifdef DEBUG
         if (cli->magic != CONN_MAGIC_DEBUG) {
             FATAL_LOG("Invalid client pointer: cli:%p", cli);
             /* I want a core dump at here */
+            free(msg);
             kill(getpid(), SIGSEGV);
             continue;
         }
 #endif /* DEBUG */
 
-        --cli->refcount;
-        if (cli->refcount < 0) {
-            FATAL_LOG("%p:Invalid Refcount:%d for connection %s:%d fd:%d",
-                cli, cli->refcount, cli->remote_ip, cli->remote_port, cli->fd);
-            free(msg);
-            kill(getpid(), SIGSEGV);
+        if (msg->close_conn) {
+            cli->close_conn = 1;
         } else {
-            if (cli->fd != -1) {
-                DEBUG_LOG("%p:connection %s:%d fd:%d, Refcount:%d", 
-                    cli, cli->remote_ip, cli->remote_port, 
-                    cli->fd, cli->refcount);
-
-                if (msg->close_conn) {
-                    cli->close_conn = 1;
-                } else {
-                    cli->close_conn = 0;
-                }
-                cli->sendbuf = sdscatlen(cli->sendbuf, msg->data, 
-                        len - sizeof(shm_msg));
-                if (ae_create_file_event(el, cli->fd, AE_WRITABLE, 
-                        write_to_client, cli) == AE_ERR) {
-                    ERROR_LOG("%p:Create write file event failed on "
-                            "connection %s:%d, Refcount:%d, fd:%d",
-                            cli, cli->remote_ip, cli->remote_port, 
-                            cli->refcount, cli->fd);
-                    close_client(cli);
-                }
-            } else {
-                if (cli->refcount == 0) {
-                    DEBUG_LOG("%p:free connection %s:%d Refcount:%d, fd:%d",
-                        cli, cli->remote_ip, cli, cli->fd);
-                    free_client(cli);
-                }
-            }
+            cli->close_conn = 0;
+        }
+        cli->sendbuf = sdscatlen(cli->sendbuf, msg->data, 
+                len - sizeof(shm_msg));
+        if (ae_create_file_event(el, cli->fd, AE_WRITABLE, 
+                write_to_client, cli) == AE_ERR) {
+            close_client(cli);
         }
         free(msg);
     }
@@ -399,7 +373,7 @@ void conn_process_cycle(void *data) {
     vb_process = VB_PROCESS_CONN;
 
     conn_pid = getpid();
-    conn_vec = vector_new(10000, sizeof(int));
+    conn_vec = vector_new(10000, sizeof(client_conn *));
     if (!conn_vec) {
         boot_notify(-1, "Initialize clients connection vector"); 
         kill(getppid(), SIGQUIT); /* exit the daemon */
@@ -464,7 +438,7 @@ void conn_process_cycle(void *data) {
         }
     }
 
-//    redirect_std();
+    redirect_std();
     ae_main(ael);
 
     if (dll.handle_fini) {
