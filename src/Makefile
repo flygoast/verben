@@ -1,7 +1,7 @@
 DEBUG = -g -DDEBUG
 CC = gcc
 CFLAGS  = $(DEBUG) -Wall
-LIB 	= -ldl -rdynamic -lpthread
+LIB 	= -ldl -rdynamic
 INC     = -I../inc
 VERBENOO = verben.o dll.o log.o conf.o lock.o shmq.o notifier.o \
       anet.o dlist.o worker.o conn.o ae.o sds.o daemon.o hash.o \

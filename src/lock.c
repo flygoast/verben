@@ -10,6 +10,7 @@
 #include <pthread.h>
 #include "lock.h"
 
+#if defined(PTHREAD_LOCK_MODE)
 /* Lock implementation based on pthread mutex. */
 int pthread_lock_init(pthread_mutex_t *mutexptr) {
     pthread_mutexattr_t     mattr;
@@ -51,6 +52,7 @@ void pthread_lock_destroy(pthread_mutex_t *mutexptr) {
 }
 
 
+#elif defined(SYSVSEM_LOCK_MODE)
 /* Lock implementation based on System V semaphore. */
 #define PROJ_ID_MAGIC   0xCD
 union semun{ 
@@ -123,6 +125,7 @@ void sysv_sem_destroy(int semid) {
     } while (rc < 0 && errno == EINTR);
 }
 
+#elif defined(FCNTL_LOCK_MODE)
 /* Lock implemention based on 'fcntl'. */
 #ifndef MAXPATHLEN
 #   ifdef PAHT_MAX
@@ -193,3 +196,4 @@ int fcntl_unlock(int fd) {
 void fcntl_destroy(int fd) {
     close(fd);
 }
+#endif

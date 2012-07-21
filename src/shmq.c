@@ -7,13 +7,7 @@
 #include <time.h>
 #include <sys/mman.h>
 #include "atomic.h"
-/* You can choose your prefer lock type.
- * #define PTHREAD_LOCK_MODE
- * #define SYSVSEM_LOCK_MODE
- * #define FCNTL_LOCK_MODE
- */
-
-#define SYSVSEM_LOCK_MODE
+#include "log.h"
 #include "lock.h"
 #include "shmq.h"
 
@@ -125,7 +119,7 @@ void shmq_free(shmq_t *q) {
 }
 
 int shmq_push(shmq_t *q, void *data, size_t len, int flag) {
-    off_t head, tail;
+    volatile off_t head, tail;
     struct timespec ts;
     shmq_block_t *blk;
     int req_size = SHMQ_ALIGN(sizeof(shmq_block_t) + len);
@@ -144,6 +138,7 @@ shmq_push_again:
 
     if (tail == q->size) {
         tail = q->start;
+        /* now the head MUST not pointing the q->start. */
         q->addr->tail = q->start;
     }
 
@@ -195,6 +190,8 @@ shmq_push_success:
     return 0;
 
 shmq_push_error:
+    DEBUG_LOG("push error:start:%lu, head:%lu, tail:%lu", 
+            q->start, q->addr->head, q->addr->tail);
     OPT_UNLOCK(&q->addr->lock, flag);
     return -1;
 shmq_push_stop:
@@ -205,7 +202,7 @@ shmq_push_stop:
 
 /* The caller should free the memory returned by 'retdata'. */
 int shmq_pop(shmq_t *q, void **retdata, int *len, int flag) {
-    off_t head, tail;
+    volatile off_t head, tail;
     shmq_block_t *blk;
     struct timespec ts;
     ts.tv_sec = 0;
@@ -267,6 +264,8 @@ shmq_pop_success:
     return 0;
 
 shmq_pop_error:
+    DEBUG_LOG("pop error:start:%lu, head:%lu, tail:%lu", 
+            q->start, q->addr->head, q->addr->tail);
     OPT_UNLOCK(&q->addr->lock, flag);
     return -1;
 shmq_pop_stop:
