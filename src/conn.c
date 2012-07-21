@@ -32,6 +32,9 @@ static time_t   unix_clock;
 static pid_t    conn_pid;
 static vector_t *conn_vec;
 static client_conn *null = NULL;
+#ifdef DEBUG
+static unsigned int identifier = 0;
+#endif /* DEBUG */
 
 static void free_client_node(void *cli) {
     client_conn *c = (client_conn *)cli;
@@ -140,6 +143,7 @@ static void read_from_client(ae_event_loop *el, int fd,
         msg->pid = conn_pid;
         msg->fd = cli->fd;
 #ifdef DEBUG
+        msg->identi = identifier++;
         msg->magic = CONN_MSG_MAGIC;
 #endif /* DEBUG */
         strncpy(msg->remote_ip, cli->remote_ip, 16);
@@ -323,6 +327,7 @@ static void notifier_handler(ae_event_loop *el, int fd,
             kill(getpid(), SIGSEGV);
             continue;
         }
+        DEBUG_LOG("%p:identifier:%lu", msg->cli, msg->identi);
 #endif /* DEBUG */
 
         if (conn_pid != msg->pid) {
@@ -334,7 +339,7 @@ static void notifier_handler(ae_event_loop *el, int fd,
         cli = msg->cli;
         temp = vector_get_at(conn_vec, msg->fd);
         if (!temp || *temp != cli) {
-            FATAL_LOG("%p:Invalid packet, fd:%d, vector value:%p", 
+            FATAL_LOG("%p:This fd has been closed, fd:%d, new vector value:%p", 
                     cli, msg->fd, temp);
             free(msg);
             continue;
