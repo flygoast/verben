@@ -141,7 +141,7 @@ void boot_notify(int ok, const char *fmt, ...) {
     int         n;
 
     if (log_buffer == MAP_FAILED) {
-        log_buffer = mmap(0, 4096, PROT_WRITE | PROT_READ, 
+        log_buffer = mmap(0, LOG_BUFFER_SIZE, PROT_WRITE | PROT_READ, 
             MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (log_buffer == MAP_FAILED) {
             fprintf(stderr, "mmap log buffer failed: %s\n", 
@@ -193,7 +193,7 @@ void log_write(int level, const char *fmt, ...) {
     }
 
     if (log_buffer == MAP_FAILED) {
-        log_buffer = mmap(0, 4096, PROT_WRITE | PROT_READ, 
+        log_buffer = mmap(0, LOG_BUFFER_SIZE, PROT_WRITE | PROT_READ, 
             MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (log_buffer == MAP_FAILED) {
             fprintf(stderr, "mmap log buffer failed: %s\n", 
@@ -211,7 +211,7 @@ void log_write(int level, const char *fmt, ...) {
         log_level_text[level]);
 
     va_start(ap, fmt);
-    end = vsnprintf(log_buffer + pos, 4096 - pos, fmt, ap);
+    end = vsnprintf(log_buffer + pos, LOG_BUFFER_SIZE - pos, fmt, ap);
     va_end(ap);
     log_buffer[end + pos] = '\n';
 
