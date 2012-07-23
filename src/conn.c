@@ -324,7 +324,7 @@ static void notifier_handler(ae_event_loop *el, int fd,
             FATAL_LOG("Invalid message, magic number 0x%08x", 
                 msg->magic);
             /* I want a core dump at here */
-            kill(getpid(), SIGSEGV);
+            raise(SIGSEGV);
             continue;
         }
         DEBUG_LOG("%p:identifier:%lu", msg->cli, msg->identi);
@@ -350,7 +350,7 @@ static void notifier_handler(ae_event_loop *el, int fd,
             FATAL_LOG("Invalid client pointer: cli:%p", cli);
             /* I want a core dump at here */
             free(msg);
-            kill(getpid(), SIGSEGV);
+            raise(SIGSEGV);
             continue;
         }
 #endif /* DEBUG */

@@ -215,7 +215,7 @@ static void sig_segv_handler(int sig, siginfo_t *info, void *secret) {
     sa.sa_flags = SA_NODEFER | SA_ONSTACK | SA_RESETHAND;
     sa.sa_handler = SIG_DFL;
     sigaction(sig, &sa, NULL);
-    kill(getpid(), sig);
+    raise(sig);
 }
 #endif /* HAVE_BACKTRACE */
 
