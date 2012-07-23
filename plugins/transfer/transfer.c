@@ -512,6 +512,13 @@ void handle_fini(void *cycle, int proc_type) {
         case VB_PROCESS_MASTER:
             break;
         case VB_PROCESS_WORKER:
+            for ( ; ; ) {
+                if (g_pool->threads_idle == g_pool->threads_num) {
+                    break;
+                }
+                sleep(1);
+            }
+
             threadpool_destroy(pool);
             free_server_config();
             break;
