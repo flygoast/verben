@@ -513,7 +513,7 @@ void handle_fini(void *cycle, int proc_type) {
             break;
         case VB_PROCESS_WORKER:
             for ( ; ; ) {
-                if (g_pool->threads_idle == g_pool->threads_num) {
+                if (pool->threads_idle == pool->threads_num) {
                     break;
                 }
                 sleep(1);
