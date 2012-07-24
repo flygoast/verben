@@ -468,37 +468,44 @@ int handle_process(char *rcvbuf, int rcvlen,
         *sndlen = 0;
         return -1;
     }
-    item = (task_item*)malloc(sizeof(*item));
-    item->backend = BACKEND_FF;
-    item->data = (char *)calloc(rcvlen + 1, 1);
-    memcpy(item->data, rcvbuf, rcvlen);
-    if (threadpool_add_task(pool, transfer_data, item, 0) != 0) {
-        memcpy(ptr, resp[1], 3);
-        *sndlen = 3;
-        ERROR_LOG("Add task to threadpool failed:ff");
-        return -1;
+
+    if (ff_cnt > 0) {
+        item = (task_item*)malloc(sizeof(*item));
+        item->backend = BACKEND_FF;
+        item->data = (char *)calloc(rcvlen + 1, 1);
+        memcpy(item->data, rcvbuf, rcvlen);
+        if (threadpool_add_task(pool, transfer_data, item, 0) != 0) {
+            memcpy(ptr, resp[1], 3);
+            *sndlen = 3;
+            ERROR_LOG("Add task to threadpool failed:ff");
+            return -1;
+        }
     }
 
-    item = (task_item*)malloc(sizeof(*item));
-    item->backend = BACKEND_SAVER;
-    item->data = (char *)calloc(rcvlen + 1, 1);
-    memcpy(item->data, rcvbuf, rcvlen);
-    if (threadpool_add_task(pool, transfer_data, item, 0) != 0) {
-        memcpy(ptr, resp[1], 3);
-        *sndlen = 3;
-        ERROR_LOG("Add task to threadpool failed:saver");
-        return -1;
+    if (saver_cnt > 0) {
+        item = (task_item*)malloc(sizeof(*item));
+        item->backend = BACKEND_SAVER;
+        item->data = (char *)calloc(rcvlen + 1, 1);
+        memcpy(item->data, rcvbuf, rcvlen);
+        if (threadpool_add_task(pool, transfer_data, item, 0) != 0) {
+            memcpy(ptr, resp[1], 3);
+            *sndlen = 3;
+            ERROR_LOG("Add task to threadpool failed:saver");
+            return -1;
+        }
     }
 
-    item = (task_item*)malloc(sizeof(*item));
-    item->backend = BACKEND_CACHE;
-    item->data = (char *)calloc(rcvlen + 1, 1);
-    memcpy(item->data, rcvbuf, rcvlen);
-    if (threadpool_add_task(pool, transfer_data, item, 0) != 0) {
-        memcpy(ptr, resp[1], 3);
-        *sndlen = 3;
-        ERROR_LOG("Add task to threadpool failed:cache");
-        return -1;
+    if (cache_cnt > 0) {
+        item = (task_item*)malloc(sizeof(*item));
+        item->backend = BACKEND_CACHE;
+        item->data = (char *)calloc(rcvlen + 1, 1);
+        memcpy(item->data, rcvbuf, rcvlen);
+        if (threadpool_add_task(pool, transfer_data, item, 0) != 0) {
+            memcpy(ptr, resp[1], 3);
+            *sndlen = 3;
+            ERROR_LOG("Add task to threadpool failed:cache");
+            return -1;
+        }
     }
 
     memcpy(ptr, resp[0], 3);
