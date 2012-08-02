@@ -16,3 +16,6 @@ predecessor of `verben'.
 
 In `plugins' directories, there are some plugin demos. You can refer
 them to write your business code.
+
+At present, there a core dump bug when execute 'verben stop' sometimes.
+Maybe someday, I'll fix it......
