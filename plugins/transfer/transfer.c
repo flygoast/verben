@@ -514,6 +514,12 @@ int handle_process(char *rcvbuf, int rcvlen,
     return 0;
 }
 
+/* This function used to free the memory allocated in handle_process().
+ * It is NOT mandatory. */
+void handle_process_post(char *sendbuf, int sendlen) {
+    free(sendbuf);
+}
+
 void handle_fini(void *cycle, int proc_type) {
     switch (proc_type) {
         case VB_PROCESS_MASTER:

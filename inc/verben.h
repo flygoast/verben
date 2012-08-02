@@ -18,6 +18,7 @@ typedef struct dll_func_struct {
     void (*handle_close)(char *, int);
     int (*handle_input)(const char*, int, char *, int);
     int (*handle_process)(char *, int, char **, int *, char *, int);
+    int (*handle_process_post)(char *, int);
 } dll_func_t;
 
 extern int vb_process;

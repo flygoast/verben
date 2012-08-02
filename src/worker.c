@@ -77,7 +77,10 @@ void worker_process_cycle(void *data) {
 
         if (retdata) {
             memcpy((char *)temp_msg + sizeof(shm_msg), retdata, retlen);
-            free(retdata);
+        }
+
+        if (dll.handle_process_post) {
+            dll.handle_process_post(retdata, retlen);
         }
 
         ret = shmq_push(send_queue, temp_msg, sizeof(shm_msg) + retlen, 

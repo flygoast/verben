@@ -95,13 +95,14 @@ static vb_signal_t signals[] = {
 };
 
 static symbol_t syms[] = {
-    /* symbol_name,     function pointer,       optional */
-    {"handle_init",     (void **)&dll.handle_init,       1},
-    {"handle_fini",     (void **)&dll.handle_fini,       1},
-    {"handle_open",     (void **)&dll.handle_open,       1},
-    {"handle_close",    (void **)&dll.handle_close,      1},
-    {"handle_input",    (void **)&dll.handle_input,      0},
-    {"handle_process",  (void **)&dll.handle_process,    0},
+    /* symbol_name,         function pointer,           optional */
+    {"handle_init",         (void **)&dll.handle_init,          1},
+    {"handle_fini",         (void **)&dll.handle_fini,          1},
+    {"handle_open",         (void **)&dll.handle_open,          1},
+    {"handle_close",        (void **)&dll.handle_close,         1},
+    {"handle_input",        (void **)&dll.handle_input,         0},
+    {"handle_process",      (void **)&dll.handle_process,       0},
+    {"handle_process_post", (void **)&dll.handle_process_post,  1},
     {NULL, NULL, 0}
 };
 
