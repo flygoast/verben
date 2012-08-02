@@ -55,7 +55,7 @@ static int log_rotate(int fd, const char *path) {
     int     i;
     struct  stat st;
 
-    if (stat(path, &st)) {
+    if (fstat(fd, &st)) {
         return 0;
     }
 
