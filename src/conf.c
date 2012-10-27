@@ -225,6 +225,101 @@ static int conf_parse_include(conf_t *conf, char *cur_file,
     return ret;
 }
 
+static char *str_sub(char *str, int start, int len) {
+    int     i;
+    char    *ret, *p;
+
+    if ((len < 1) || (start < 0) || (start > strlen(str)) ||
+            start + len > strlen(str)) {
+        return NULL;
+    }
+
+    ret = (char *)malloc(len + 1);
+    if (!ret) {
+        return NULL;
+    }
+    p = ret;
+
+    str += start;
+    for (i = 0; i < len; ++i) {
+        *p++ = *str++;
+    }
+    *p = '\0';
+    return ret;
+}
+
+static char *conf_evaluate(conf_t *conf, char *value) {
+    char    *buf = NULL;
+    int     avail = MAX_LINE - 1;
+    char    *scan, *p;
+    int     len = 0;
+    char    *var, *sub = NULL, *ret;
+
+    if ((scan = strchr(value, '$')) == NULL) {
+        return value;
+    }
+
+    buf = (char *)calloc(MAX_LINE, sizeof(char));
+    if (!buf) {
+        return NULL;
+    }
+
+    if (scan - value > avail) {
+        goto error;
+    }
+
+    strncpy(buf, value, scan - value);
+    avail -= scan - value;
+
+    ++scan;
+    if (*scan == '{' || *scan == '(') {
+        ++scan;
+    }
+
+    p = (char *)scan;
+    while (*scan && *scan != '}' && *scan != ')' && *scan != ' ') {
+        ++scan;
+        ++len;
+    }
+
+    if (*scan == '}' || *scan == ')') {
+        ++scan;
+    }
+
+    sub = str_sub(p, 0, len);
+    if (!sub) {
+        goto error;
+    }
+
+    if ((var = conf_get_str_value(conf, sub, NULL)) == NULL) {
+        var = getenv(sub);
+    }
+
+    if (var) {
+        if (strlen(var) > avail) {
+            goto error;
+        }
+        strncat(buf, var, avail);
+        avail -= strlen(var);
+    }
+    strncat(buf, scan, avail);
+    free(sub);
+
+    if ((ret = conf_evaluate(conf, buf)) == NULL) {
+        goto error;
+    } else if (ret == buf) {
+        return ret;
+    } else {
+        free(buf);
+        return ret;
+    }
+
+error:
+    if (buf) free(buf);
+    if (sub) free(sub);
+    return NULL;
+}
+
 static int conf_parse(conf_t *conf, char *resolved_path, 
         FILE *fp, int block) {
     int n;
@@ -232,6 +327,7 @@ static int conf_parse(conf_t *conf, char *resolved_path,
     char buf[MAX_LINE];
     unsigned char *field[2];
     conf_value_t *cv;
+    char *var = NULL;
 
     if (!conf->ht) {
         conf->ht = hash_create(HASH_INIT_SLOTS);
@@ -257,12 +353,23 @@ static int conf_parse(conf_t *conf, char *resolved_path,
         } else if (str_explode(NULL, (unsigned char*)buf, field, 2) == 2) {
             int is_block = 0;
 
+            if ((var = conf_evaluate(conf, (char *)field[1])) == NULL) {
+                ret = -1;
+                goto error;
+            }
+
             /* Process `include' directive. */
             if (!strcmp((char *)field[0], "include")) {
-                if (conf_parse_include(conf, resolved_path, 
-                            (char *)field[1])) {
+                if (conf_parse_include(conf, resolved_path, var)) {
+                    if (var != (char *)field[1]) {
+                        free(var);
+                    }
                     ret = -1;
                     goto error;
+                }
+
+                if (var != (char *)field[1]) {
+                    free(var);
                 }
                 continue;
             }
@@ -310,7 +417,8 @@ static int conf_parse(conf_t *conf, char *resolved_path,
                         ret = -1;
                         goto error;
                     }
-                    ce->value = strdup((char *)field[1]);
+                    ce->value = (var == (char *)field[1]) ?
+                        strdup((char *)field[1]) : var;
                     ce->next = NULL;
                     cv->type = CONF_TYPE_ENTRY;
                     cv->value = ce;
@@ -328,7 +436,9 @@ static int conf_parse(conf_t *conf, char *resolved_path,
                         ret = -1;
                         goto error;
                     }
-                    ce->value = strdup((char *)field[1]);
+
+                    ce->value = (var == (char *)field[1]) ?
+                        strdup((char *)field[1]) : var;
                     ce->next = (conf_entry_t*)(cv->value);
                     cv->value = ce;
                 } else {
