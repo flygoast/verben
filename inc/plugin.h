@@ -41,5 +41,17 @@ int handle_input(char*recvbuf, int recvlen,
 int handle_process(char *recvbuf, int recvlen, 
         char **sendbuf, int *sendlen, const char *remote_ip, int port);
 
+/* Add interp section just for geek.
+ * This partion of code can be remove to Makefile 
+ * to determine RTLD(runtime loader). */
+#if __WORDSIZE == 64
+#define RUNTIME_LINKER  "/lib64/ld-linux-x86-64.so.2"
+#else
+#define RUNTIME_LINKER  "/lib/ld-linux.so.2"
+#endif
+
+const char __invoke_dynamic_linker__[] __attribute__ ((section (".interp")))
+    = RUNTIME_LINKER;
+
 __END_DECLS
 #endif /* __PLUGIN_H_INCLUDED__ */

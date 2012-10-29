@@ -19,6 +19,13 @@
 
 #define RESPONSE_BUF_SIZE   4096
 
+void __http_plugin_main(void) {
+    printf("** verben [http] plugin **\n");
+    printf("Copyright(c)flygoast, flygoast@126.com\n");
+    printf("verben version: %s\n", VERBEN_VERSION);
+    exit(0);
+}
+
 static char *doc_root;
 static char *index_file;
 

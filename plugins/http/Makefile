@@ -1,5 +1,6 @@
 CC = gcc
 CFLAGS  = -fPIC -Wall -pipe -DDEBUG -g -D_GNU_SOURCE -D_REENTRANT
+LDFLAGS = -Wl,-e,__http_plugin_main
 LIB 	= -ldl -lrt -rdynamic
 INC     = -I../../inc 
 OO	= http.o
@@ -9,7 +10,7 @@ all: $(TARGETS)
 
 
 $(TARGETS): $(OO)
-	$(CC) $(CFLAGS) $(OO) -shared -o $@ $(LIBDIR) $(LIB)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(OO) -shared -o $@ $(LIBDIR) $(LIB)
 
 install:
 	install $(TARGETS) ../../bin/

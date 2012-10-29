@@ -3,8 +3,16 @@
 #include <string.h>
 #include <unistd.h>
 #include "verben.h"
+#include "version.h"
 #include "plugin.h"
 #include "log.h"
+
+void __echo_plugin_main(void) {
+    printf("** verben [echo] plugin **\n");
+    printf("Copyright(c)flygoast, flygoast@126.com\n");
+    printf("verben version: %s\n", VERBEN_VERSION);
+    exit(0);
+}
 
 int handle_init(void *conf, int proc_type) {
     switch (proc_type) {
