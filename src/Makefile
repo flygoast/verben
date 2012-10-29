@@ -8,12 +8,17 @@ VERBENOO = verben.o dll.o log.o conf.o lock.o shmq.o notifier.o \
 	  vector.o
 BENCHOO = echo_benchmark.o dlist.o ae.o sds.o anet.o
 VERBEN = verben
+VERS = version.h
 BENCH = echo_benchmark
 
 all: $(VERBEN) $(BENCH)
 
-$(VERBEN): $(VERBENOO)
+$(VERS):
+	cd ../inc && sh version.h.sh 
+
+$(VERBEN): $(VERS) $(VERBENOO)
 	$(CC) $(CFLAGS) $(VERBENOO) -o $@ $(LIBDIR) $(LIB)
+
 $(BENCH): $(BENCHOO)
 	$(CC) $(CFLAGS) $(BENCHOO) -o $@ $(LIBDIR) $(LIB)
 
@@ -29,6 +34,7 @@ conf.o: hash.c conf.c
 	$(CC) $(CFLAGS) $< -c -o $@ $(INC)
 
 clean:
+	rm ../inc/version.h
 	rm -f *.o
 	rm -f $(VERBEN)
 	rm -f $(BENCH)
