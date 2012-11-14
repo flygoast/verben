@@ -57,6 +57,8 @@ void worker_process_cycle(void *data) {
             continue;
         }
 
+        retdata = NULL;
+
         ret = dll.handle_process((char*)msg + sizeof(shm_msg),
                 msg_len - sizeof(shm_msg),
                 &retdata, &retlen, msg->remote_ip, msg->remote_port);

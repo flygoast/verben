@@ -155,7 +155,9 @@ int handle_process(char *rcvbuf, int rcvlen,
 /* This function used to free the memory allocated in handle_process().
  * It is NOT mandatory. */
 void handle_process_post(char *sendbuf, int sendlen) {
-    free(sendbuf);
+    if (sendbuf) {
+        free(sendbuf);
+    }
 }
 
 void handle_fini(void *cycle, int proc_type) {
