@@ -8,7 +8,6 @@ __BEGIN_DECLS
 #define VERBEN_OK               0x00000000
 #define VERBEN_ERROR            0x00000001
 #define VERBEN_CONN_CLOSE       0x00000002
-#define VERBEN_CONN_KEEPALIVE   0x00000004
 
 /* It's optional. If implemented, it would be invoked when
  * the process at beginning phase. You should do some 
