@@ -15,6 +15,7 @@ $(TARGETS): $(OO)
 install:
 	install $(TARGETS) ../../bin/
 	cp http.conf ../../bin/
+	cp index.html ../../bin/
 
 .c.o:
 	$(CC) $(CFLAGS) $< -c -o $@ $(INC)

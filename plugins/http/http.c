@@ -110,11 +110,11 @@ int handle_process(char *rcvbuf, int rcvlen,
         ptr += 4;
     } else {
         /* TODO unsupported methods */
-        return -1;
+        return VERBEN_ERROR;
     }
 
     if (!(ptr2 = strstr(ptr, "HTTP/"))) {
-        return -1;
+        return VERBEN_ERROR;
     }
 
     *--ptr2 = '\0';
@@ -128,7 +128,7 @@ int handle_process(char *rcvbuf, int rcvlen,
     fd = open(file, O_RDONLY);
     if (fd < 0) {
         ERROR_LOG("open file [%s] failed", file);
-        return -1;
+        return VERBEN_ERROR;
     }
     file_size = lseek(fd, 0, SEEK_END);
     lseek(fd, 0, SEEK_SET);
@@ -147,9 +147,9 @@ int handle_process(char *rcvbuf, int rcvlen,
     *sndlen = ptr - *sndbuf;
     close(fd);
     if (n < 0) {
-        return -1;
+        return VERBEN_ERROR;
     }
-    return -1;
+    return VERBEN_CONN_CLOSE;
 }
 
 /* This function used to free the memory allocated in handle_process().

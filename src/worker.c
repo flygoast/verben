@@ -15,6 +15,7 @@
 #include "conf.h"
 #include "log.h"
 #include "notifier.h"
+#include "plugin.h"
 
 void worker_process_cycle(void *data) {
     shm_msg *msg = NULL;
@@ -62,23 +63,31 @@ void worker_process_cycle(void *data) {
         ret = dll.handle_process((char*)msg + sizeof(shm_msg),
                 msg_len - sizeof(shm_msg),
                 &retdata, &retlen, msg->remote_ip, msg->remote_port);
+
+        assert(retlen >= 0);
         /* Worker processes don't modify the message header segment. */
-        temp_msg = (shm_msg*)realloc(msg, sizeof(shm_msg) + retlen);
+        if (retlen > 0) {
+            temp_msg = (shm_msg*)realloc(msg, sizeof(shm_msg) + retlen);
+        } else {
+            temp_msg = msg;
+        }
 
         if (!temp_msg) {
             FATAL_LOG("Out of memory");
-            exit(0);
+            exit(1);
         }
 
         /* Whether close the connection after send the response. */
-        if (ret == 0) {
-            temp_msg->close_conn = 0;
-        } else {
+        if (ret & (VERBEN_CONN_CLOSE | VERBEN_ERROR)) {
             temp_msg->close_conn = 1;
+        } else {
+            temp_msg->close_conn = 0;
         }
 
-        if (retdata) {
-            memcpy((char *)temp_msg + sizeof(shm_msg), retdata, retlen);
+        if (!(ret & VERBEN_ERROR)) {
+            if (retdata && retlen > 0) {
+                memcpy((char *)temp_msg + sizeof(shm_msg), retdata, retlen);
+            }
         }
 
         if (dll.handle_process_post) {

@@ -58,7 +58,7 @@ int handle_process(char *rcvbuf, int rcvlen,
     *sndlen = rcvlen;
 
     memcpy(*sndbuf, rcvbuf, rcvlen);
-    return 0;
+    return VERBEN_OK;
 }
 
 /* This function used to free the memory allocated in handle_process().
