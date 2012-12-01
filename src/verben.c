@@ -612,7 +612,7 @@ int main(int argc, char *argv[]) {
 
     /* Invoke the hook in master. */
     if (dll.handle_init) {
-        if (dll.handle_init(NULL, vb_process) != 0) {
+        if (dll.handle_init(&g_conf, vb_process) != 0) {
             BOOT_FAILED("Invoke hook handle_init in master");
         }
     }
