@@ -34,7 +34,6 @@ conf.o: hash.c conf.c
 	$(CC) $(CFLAGS) $< -c -o $@ $(INC)
 
 clean:
-	rm ../inc/version.h
 	rm -f *.o
 	rm -f $(VERBEN)
 	rm -f $(BENCH)
