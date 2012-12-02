@@ -4,8 +4,12 @@
 #include <unistd.h>
 #include "ae.h"
 
-#define CONN_MSG_MAGIC      0x567890EF
-#define CONN_MAGIC_DEBUG    0x1234ABCD
+#define VERBEN_OK               0x00000000
+#define VERBEN_ERROR            0x00000001
+#define VERBEN_CONN_CLOSE       0x00000002
+
+#define CONN_MSG_MAGIC          0x567890EF
+#define CONN_MAGIC_DEBUG        0x1234ABCD
 
 typedef struct client_conn {
 #ifdef DEBUG

@@ -260,7 +260,9 @@ static void accept_common_handler(int cli_fd, char *cli_ip, int cli_port) {
     }
 
     if (dll.handle_open) {
-        if (dll.handle_open(&retbuf, &len, cli_ip, cli_port) != 0) {
+        int ret = dll.handle_open(&retbuf, &len, cli_ip, cli_port);
+
+        if (ret & VERBEN_ERROR) {
             WARNING_LOG("%p:close connection %s:%d according to handle_open",
                     c, c->remote_ip, c->remote_port);
             close_client(c);
@@ -268,6 +270,13 @@ static void accept_common_handler(int cli_fd, char *cli_ip, int cli_port) {
         } else {
             /* You can send something such as welcome information once
              * upon client's connection. */
+
+            if (ret & VERBEN_CONN_CLOSE) {
+                c->close_conn = 1;
+            } else {
+                c->close_conn = 0;
+            }
+
             if (retbuf != NULL) {
                 c->sendbuf = sdscatlen(c->sendbuf, retbuf, len);
                 if (ae_create_file_event(ael, c->fd, AE_WRITABLE, 

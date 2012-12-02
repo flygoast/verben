@@ -5,9 +5,6 @@
 
 __BEGIN_DECLS
 
-#define VERBEN_OK               0x00000000
-#define VERBEN_ERROR            0x00000001
-#define VERBEN_CONN_CLOSE       0x00000002
 
 /* It's optional. If implemented, it would be invoked when
  * the process at beginning phase. You should do some 
@@ -54,8 +51,10 @@ int handle_process(char *recvbuf, int recvlen,
 #define RUNTIME_LINKER  "/lib/ld-linux.so.2"
 #endif
 
+#ifndef RUNTIME_LINKER
 const char __invoke_dynamic_linker__[] __attribute__ ((section (".interp")))
     = RUNTIME_LINKER;
+#endif
 
 __END_DECLS
 #endif /* __PLUGIN_H_INCLUDED__ */
