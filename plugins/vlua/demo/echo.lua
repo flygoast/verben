@@ -40,7 +40,7 @@ function handle_open(params)
         params["remote_port"])
     time = os.time()
 
-    return VERBEN_OK, "Welcome to verben lua[" .. time .. "]\r\n"
+    return VERBEN_OK, "Welcome to verben lua [" .. time .. "]\r\n"
 end
 
 function handle_close(params)
@@ -49,16 +49,15 @@ function handle_close(params)
 end
 
 function handle_input(params)
-    log(DEBUG, "connection:", params["remote_ip"], ":", 
-        params["remote_port"]);
+    log(DEBUG, "Connection:", params["remote_ip"], ":", 
+        params["remote_port"], "length: ", params["length"])
 
     return params["length"]
 end
 
 function handle_process(params)
-    log(DEBUG, "Connection from ", params["remote_ip"], ":",
-        params["remote_port"], " closed")
-    return VERBEN_OK, params["content"];
+    log(DEBUG, params["content"], ":", params["length"])
+    return VERBEN_OK, params["content"]
 end
 
 function handle_fini(conf, t)

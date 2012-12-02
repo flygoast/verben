@@ -262,7 +262,7 @@ static void accept_common_handler(int cli_fd, char *cli_ip, int cli_port) {
     if (dll.handle_open) {
         int ret = dll.handle_open(&retbuf, &len, cli_ip, cli_port);
 
-        if (ret & VERBEN_ERROR) {
+        if (ret == VERBEN_ERROR) {
             WARNING_LOG("%p:close connection %s:%d according to handle_open",
                     c, c->remote_ip, c->remote_port);
             close_client(c);
@@ -271,7 +271,7 @@ static void accept_common_handler(int cli_fd, char *cli_ip, int cli_port) {
             /* You can send something such as welcome information once
              * upon client's connection. */
 
-            if (ret & VERBEN_CONN_CLOSE) {
+            if (ret == VERBEN_CONN_CLOSE) {
                 c->close_conn = 1;
             } else {
                 c->close_conn = 0;
@@ -445,7 +445,7 @@ void conn_process_cycle(void *data) {
     }
 
     if (dll.handle_init) {
-        if (dll.handle_init(data, vb_process) != 0) {
+        if (dll.handle_init(data, vb_process) != VERBEN_OK) {
             boot_notify(-1, "Invoke handle_init hook in conn process");
             kill(getppid(), SIGQUIT); /* exit the daemon */
             exit(0);

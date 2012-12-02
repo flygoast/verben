@@ -19,6 +19,23 @@
 #define VERBEN_LIBNAME      "verben"
 #define VERBEN_LUA_VERSION  "0.0.1"
 
+#define set_const(key, value)               \
+    lua_pushliteral(L, key);                \
+    lua_pushnumber(L, value);               \
+    lua_settable(L, -3)
+
+#define set_str_param(L, key, value)        \
+    lua_pushstring(L, value);               \
+    lua_setfield(L, -2, key)
+
+#define set_lstr_param(L, key, value, len)  \
+    lua_pushlstring(L, value, len);         \
+    lua_setfield(L, -2, key)
+
+#define set_num_param(L, key, value)        \
+    lua_pushinteger(L, value);              \
+    lua_setfield(L, -2, key)
+
 static lua_State *globalL = NULL;
 
 typedef struct conf_media {
@@ -28,7 +45,7 @@ typedef struct conf_media {
 
 void __vlua_plugin_main(void) {
     printf("** verben [vlua] plugin **\n");
-    printf("Copyright(c)Feng Gu, flygoast@126.com\n");
+    printf("Copyright(c)FengGu, flygoast@126.com\n");
     printf("verben version: %s\n", VERBEN_VERSION);
     printf("verben vlua version: %s\n", VERBEN_LUA_VERSION);
     exit(0);
@@ -108,11 +125,6 @@ static const luaL_Reg verben_lib[] = {
     { NULL,         NULL        }
 };
 
-#define set_const(key, value)   \
-    lua_pushliteral(L, key);    \
-    lua_pushnumber(L, value);   \
-    lua_settable(L, -3)
-
 static void register_verben(lua_State *L) {
     luaL_register(L, VERBEN_LIBNAME, verben_lib);
 
@@ -141,24 +153,30 @@ static void register_verben(lua_State *L) {
 
 static int call_handle_init(lua_State *L, conf_t *conf, int proc_type) {
     lua_getglobal(L, "handle_init");
+    if (lua_isnil(L, 1)) {
+        lua_pop(L, 1);
+        return VERBEN_OK;
+    }
+
     lua_pushlightuserdata(L, conf);
     lua_pushinteger(L, proc_type);
 
     if (lua_pcall(L, 2, 1, 0)) {
         fprintf(stderr, "Call lua handle_init failed: %s\n", 
             lua_tostring(L, -1));
-        return -1;
+        lua_pop(L, 1);
+        return VERBEN_ERROR;
     }
 
-    if (luaL_checkint(L, 1)) {
+    if (luaL_checkint(L, 1) != VERBEN_OK) {
         fprintf(stderr, "Lua handle_init in process[%d] failed:"
             " returned value: %d\n", proc_type, luaL_checkint(L, 1));
         lua_pop(L, 1);
-        return -1;
+        return VERBEN_OK;
     }
 
     lua_pop(L, 1);
-    return 0;
+    return VERBEN_OK;
 }
 
 int handle_init(void *cycle, int proc_type) {
@@ -169,7 +187,7 @@ int handle_init(void *cycle, int proc_type) {
         lua_file = conf_get_str_value(conf, "luafile", NULL);
         if (lua_file == NULL) {
             fprintf(stderr, "'luafile' configure not found\n");
-            return -1;
+            return VERBEN_ERROR;
         }
     
         globalL = luaL_newstate();
@@ -177,26 +195,31 @@ int handle_init(void *cycle, int proc_type) {
     
         register_verben(globalL);
     
+#ifdef DEBUG
         if (lua_gettop(globalL)) {
             fprintf(stderr, "Lua stack is not empty\n");
-            return -1;
+            return VERBEN_ERROR;
         }
+#endif /* DEBUG */
     
         if (luaL_loadfile(globalL, lua_file)) {
-            fprintf(stderr, "Load lua file %s failed\n", lua_file); 
-            return -1;
+            fprintf(stderr, "Load lua file %s failed:%s\n", 
+                lua_file, luaL_checkstring(globalL, 1)); 
+            lua_pop(globalL, 1);
+            return VERBEN_ERROR;
         }
     
         if (lua_pcall(globalL, 0, LUA_MULTRET, 0)) {
             fprintf(stderr, "Prepare the lua file %s failed: %s\n", 
-                lua_file, lua_tostring(globalL, -1)); 
-            return -1;
+                lua_file, luaL_checkstring(globalL, 1)); 
+            lua_pop(globalL, 1);
+            return VERBEN_ERROR;
         }
     }
 
     if (lua_gettop(globalL)) {
         fprintf(stderr, "Lua stack is not empty\n");
-        return -1;
+        return VERBEN_ERROR;
     }
 
     return call_handle_init(globalL, conf, proc_type);
@@ -209,26 +232,27 @@ int handle_open(char **sendbuf, int *len,
     int ret;
 
     lua_getglobal(globalL, "handle_open");
+    if (lua_isnil(globalL, 1)) {
+        lua_pop(globalL, 1);
+        return VERBEN_OK;
+    }
+
     lua_newtable(globalL);
-    lua_pushstring(globalL, remote_ip);
-    lua_setfield(globalL, -2, "remote_ip");
-    lua_pushinteger(globalL, port);
-    lua_setfield(globalL, -2, "remote_port");
+    set_str_param(globalL, "remote_ip", remote_ip);
+    set_num_param(globalL, "remote_port", port);
 
     if (lua_pcall(globalL, 1, 2, 0)) {
         FATAL_LOG("Call lua handle_open failed: %s", 
             lua_tostring(globalL, -1));
-        lua_pop(globalL, 1);
-        return -1;
+        /* never get here */
+        assert(0);
     }
 
     ret = luaL_checkint(globalL, 1);
     response = lua_tolstring(globalL, 2, (size_t *)len);
     
-    DEBUG_LOG("Lua handle_open returned: %d, %s, length: %d", ret,
-        response ? response : "(NULL)", *len);
-
     if (!response) {
+        lua_pop(globalL, 2);
         *sendbuf = NULL;
         *len = 0;
         return ret;
@@ -243,18 +267,23 @@ int handle_open(char **sendbuf, int *len,
     return ret;
 }
 
+
 void handle_close(const char *remote_ip, int port) {
     lua_getglobal(globalL, "handle_close");
+    if (lua_isnil(globalL, 1)) {
+        lua_pop(globalL, 1);
+        return;
+    }
+
     lua_newtable(globalL);
-    lua_pushstring(globalL, remote_ip);
-    lua_setfield(globalL, -2, "remote_ip");
-    lua_pushinteger(globalL, port);
-    lua_setfield(globalL, -2, "remote_port");
+    set_str_param(globalL, "remote_ip", remote_ip);
+    set_num_param(globalL, "remote_port", port);
 
     if (lua_pcall(globalL, 1, 0, 0)) {
         FATAL_LOG("Call lua handle_open failed: %s", 
             lua_tostring(globalL, -1));
-        lua_pop(globalL, 1);
+        /* never get here */
+        assert(0);
     }
 }
 
@@ -262,26 +291,27 @@ int handle_input(char *buf, int len, const char *remote_ip, int port) {
     int expect_len;
 
     lua_getglobal(globalL, "handle_input");
+    if (lua_isnil(globalL, 1)) {
+        lua_pop(globalL, 1);
+        ERROR_LOG("Lua handle_input not supplied");
+        return len;
+    }
+
     lua_newtable(globalL);
-    lua_pushstring(globalL, remote_ip);
-    lua_setfield(globalL, -2, "remote_ip");
-    lua_pushinteger(globalL, port);
-    lua_setfield(globalL, -2, "remote_port");
-    lua_pushlstring(globalL, buf, len);
-    lua_setfield(globalL, -2, "content");
-    lua_pushinteger(globalL, len);
-    lua_setfield(globalL, -2, "length");
+    set_str_param(globalL, "remote_ip", remote_ip);
+    set_num_param(globalL, "remote_port", port);
+    set_lstr_param(globalL, "content", buf, len);
+    set_num_param(globalL, "length", len);
 
     if (lua_pcall(globalL, 1, 1, 0)) {
         FATAL_LOG("Call lua handle_input failed: %s", 
             lua_tostring(globalL, -1));
-        lua_pop(globalL, 1);
-        return 0;
+        /* never get here */
+        assert(0);
     }
 
     expect_len = luaL_checkint(globalL, 1);
     lua_pop(globalL, 1);
-
     return expect_len;
 }
 
@@ -292,39 +322,37 @@ int handle_process(char *rcvbuf, int rcvlen,
     int ret;
 
     lua_getglobal(globalL, "handle_process");
+    if (lua_isnil(globalL, 1)) {
+        lua_pop(globalL, 1);
+        WARNING_LOG("Lua handle_process not supplied");
+        return VERBEN_ERROR;
+    }
+
     lua_newtable(globalL);
-    lua_pushstring(globalL, remote_ip);
-    lua_setfield(globalL, -2, "remote_ip");
-    lua_pushinteger(globalL, port);
-    lua_setfield(globalL, -2, "remote_port");
-    lua_pushlstring(globalL, rcvbuf, rcvlen);
-    lua_setfield(globalL, -2, "content");
-    lua_pushinteger(globalL, rcvlen);
-    lua_setfield(globalL, -2, "length");
+    set_str_param(globalL, "remote_ip", remote_ip);
+    set_num_param(globalL, "remote_port", port);
+    set_lstr_param(globalL, "content", rcvbuf, rcvlen);
+    set_num_param(globalL, "length", rcvlen);
 
     if (lua_pcall(globalL, 1, 2, 0)) {
         FATAL_LOG("Call lua handle_process failed: %s", 
             lua_tostring(globalL, -1));
-        lua_pop(globalL, 1);
-        return VERBEN_ERROR;
+        /* never get here */
+        assert(0);
     }
 
     ret = luaL_checkint(globalL, 1);
     response = lua_tolstring(globalL, 2, (size_t *)sndlen);
 
-    DEBUG_LOG("Lua handle_process returned: %d, %s", ret, 
-        response? response : "(NULL)");
-
     if (!response) {
+        lua_pop(globalL, 2);
+        *sndbuf = NULL;
+        *sndlen = 0;
         return ret;
     }
-
 
     buf = (char *)malloc(*sndlen);
-    if (!buf) {
-        FATAL_LOG("Out of memory");
-        return ret;
-    }
+    assert(buf);
     memcpy(buf, response, *sndlen);
     *sndbuf = buf;
     lua_pop(globalL, 2);
@@ -332,8 +360,6 @@ int handle_process(char *rcvbuf, int rcvlen,
     return ret;
 }
 
-/* This function used to free the memory allocated in handle_process().
- * It is NOT mandatory. */
 void handle_process_post(char *sendbuf, int sendlen) {
     if (sendbuf) {
         free(sendbuf);
@@ -344,13 +370,20 @@ void handle_fini(void *cycle, int proc_type) {
     conf_t *conf = (conf_t *)cycle;
 
     lua_getglobal(globalL, "handle_fini");
+    if (lua_isnil(globalL, 1)) {
+        lua_pop(globalL, 1);
+        lua_close(globalL);
+        return;
+    }
+
     lua_pushlightuserdata(globalL, conf);
     lua_pushinteger(globalL, proc_type);
 
     if (lua_pcall(globalL, 2, 0, 0)) {
         FATAL_LOG("Call lua handle_fini failed: %s\n", 
             lua_tostring(globalL, -1));
-        lua_pop(globalL, 1);
+        /* never get here */
+        assert(0);
     }
 
     lua_close(globalL);

@@ -15,7 +15,6 @@
 #include "conf.h"
 #include "log.h"
 #include "notifier.h"
-#include "plugin.h"
 
 void worker_process_cycle(void *data) {
     shm_msg *msg = NULL;
@@ -28,7 +27,7 @@ void worker_process_cycle(void *data) {
     vb_process = VB_PROCESS_WORKER;
     
     if (dll.handle_init) {
-        if (dll.handle_init(data, vb_process) < 0) {
+        if (dll.handle_init(data, vb_process) != VERBEN_OK) {
             boot_notify(-1, "Invoke hook handle_init in worker[%d]",
                     getpid());
             kill(getppid(), SIGQUIT);
@@ -78,13 +77,13 @@ void worker_process_cycle(void *data) {
         }
 
         /* Whether close the connection after send the response. */
-        if (ret & (VERBEN_CONN_CLOSE | VERBEN_ERROR)) {
+        if (ret == VERBEN_CONN_CLOSE || ret == VERBEN_ERROR) {
             temp_msg->close_conn = 1;
         } else {
             temp_msg->close_conn = 0;
         }
 
-        if (!(ret & VERBEN_ERROR)) {
+        if (ret != VERBEN_ERROR) {
             if (retdata && retlen > 0) {
                 memcpy((char *)temp_msg + sizeof(shm_msg), retdata, retlen);
             }
