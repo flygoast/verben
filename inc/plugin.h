@@ -1,5 +1,6 @@
 #ifndef __PLUGIN_H_INCLUDED__
 #define __PLUGIN_H_INCLUDED__
+
 #include <sys/cdefs.h>
 #include "conn.h"
 
@@ -51,10 +52,11 @@ int handle_process(char *recvbuf, int recvlen,
 #define RUNTIME_LINKER  "/lib/ld-linux.so.2"
 #endif
 
-#ifndef RUNTIME_LINKER
+#ifndef __SO_INTERP__
+#define __SO_INTERP__
 const char __invoke_dynamic_linker__[] __attribute__ ((section (".interp")))
     = RUNTIME_LINKER;
-#endif
+#endif /* __SO_INTERP__ */
 
 __END_DECLS
 #endif /* __PLUGIN_H_INCLUDED__ */
