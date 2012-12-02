@@ -24,7 +24,6 @@ VERBEN_OK         = verben.VERBEN_OK
 VERBEN_ERROR      = verben.VERBEN_ERROR
 VERBEN_CONN_CLOSE = verben.VERBEN_CONN_CLOSE
 
-
 function handle_init(conf, t)
     if t == MASTER then
         log(DEBUG, "lua handle_init in MASTER")
@@ -33,7 +32,7 @@ function handle_init(conf, t)
     elseif t == CONN then
         log(DEBUG, "lua handle_init in CONN")
     end
-    return 0
+    return VERBEN_OK
 end
 
 function handle_open(params)
@@ -41,7 +40,7 @@ function handle_open(params)
         params["remote_port"])
     time = os.time()
 
-    return 2, "Welcome to verben lua[" .. time .. "]\r\n"
+    return VERBEN_OK, "Welcome to verben lua[" .. time .. "]\r\n"
 end
 
 function handle_close(params)
@@ -59,7 +58,7 @@ end
 function handle_process(params)
     log(DEBUG, "Connection from ", params["remote_ip"], ":",
         params["remote_port"], " closed")
-    return 0, params["content"];
+    return VERBEN_OK, params["content"];
 end
 
 function handle_fini(conf, t)
