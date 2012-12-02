@@ -17,6 +17,7 @@
 #include "lauxlib.h"
 
 #define VERBEN_LIBNAME      "verben"
+#define VERBEN_LUA_VERSION  "0.0.1"
 
 static lua_State *globalL = NULL;
 
@@ -29,34 +30,19 @@ void __vlua_plugin_main(void) {
     printf("** verben [vlua] plugin **\n");
     printf("Copyright(c)Feng Gu, flygoast@126.com\n");
     printf("verben version: %s\n", VERBEN_VERSION);
+    printf("verben vlua version: %s\n", VERBEN_LUA_VERSION);
     exit(0);
 }
 
-static int l_log(lua_State *L) {
+static int v_log(lua_State *L) {
     int i;
     int top;
-    int level_n;
-    const char *level;
+    int level;
     const char *message;
-    const char *valid_levels[] = {
-        "FATAL",
-        "ERROR",
-        "WARNING",
-        "NOTICE",
-        "DEBUG",
-        NULL
-    };
 
-    level = luaL_checkstring(L, 1);
-
-    for (i = 0; valid_levels[i]; ++i) {
-        if (strcmp(level, valid_levels[i]) == 0) {
-            level_n = i;
-            break;
-        }
-    }
-
-    if (!valid_levels[i]) {
+    level = luaL_checkint(L, 1);
+    if (level > LOG_LEVEL_ALL || level < 0) {
+        WARNING_LOG("level param from lua log function is invalid: %d", level);
         return 0;
     }
 
@@ -76,11 +62,6 @@ static int l_log(lua_State *L) {
             }
             lua_replace(L, i);
             break;
-        case LUA_TUSERDATA:
-            /* TODO */
-            lua_pushstring(L, "(USERDATA)");
-            lua_replace(L, i);
-            break;
         case LUA_TNIL:
             lua_pushstring(L, "(nil)");
             lua_replace(L, i);
@@ -92,7 +73,7 @@ static int l_log(lua_State *L) {
     lua_concat(L, lua_gettop(L) - 1);
 
     message = luaL_checkstring(L, 2);
-    DETAIL(level_n, "%s", message);
+    DETAIL(level, "%s", message);
     return 0;
 }
 
@@ -103,7 +84,7 @@ static int push_config(void *key, void *value, void *ptr) {
     return 0;
 }
 
-static int l_config(lua_State *L) {
+static int v_config(lua_State *L) {
     unsigned int i;
     conf_t *conf = (conf_t *)lua_touserdata(L, 1);
     char *name = (char *)luaL_checkstring(L, 2);
@@ -122,14 +103,40 @@ static int l_config(lua_State *L) {
 }
 
 static const luaL_Reg verben_lib[] = {
-    { "config",     l_config    },
-    { "log",        l_log       },
+    { "config",     v_config    },
+    { "log",        v_log       },
     { NULL,         NULL        }
 };
 
+#define set_const(key, value)   \
+    lua_pushliteral(L, key);    \
+    lua_pushnumber(L, value);   \
+    lua_settable(L, -3)
+
 static void register_verben(lua_State *L) {
     luaL_register(L, VERBEN_LIBNAME, verben_lib);
-    lua_setglobal(L, VERBEN_LIBNAME);
+
+    lua_pushliteral(L, "VLUA_VERSION");
+    lua_pushliteral(L, VERBEN_LUA_VERSION);
+    lua_settable(L, -3);
+
+    set_const("VERBEN_OK", VERBEN_OK);
+    set_const("VERBEN_ERROR", VERBEN_ERROR);
+    set_const("VERBEN_CONN_CLOSE", VERBEN_CONN_CLOSE);
+
+    set_const("FATAL", LOG_LEVEL_FATAL);
+    set_const("ERROR", LOG_LEVEL_ERROR);
+    set_const("WARNING", LOG_LEVEL_WARNING);
+    set_const("NOTICE", LOG_LEVEL_NOTICE);
+    set_const("DEBUG", LOG_LEVEL_DEBUG);
+
+
+    set_const("MASTER", VB_PROCESS_MASTER);
+    set_const("WORKER", VB_PROCESS_WORKER);
+    set_const("CONN", VB_PROCESS_CONN);
+
+    /* keep stack balance */
+    lua_pop(L, 1);
 }
 
 static int call_handle_init(lua_State *L, conf_t *conf, int proc_type) {

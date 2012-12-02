@@ -7,50 +7,67 @@ verben = nil
 local verben = _v
 _v = nil
 
-log     = verben.log
-config  = verben.config
+-- functions exported from vlua core.
+log               = verben.log
+config            = verben.config
+
+-- contants exported from vlua core.
+MASTER            = verben.MASTER
+WORKER            = verben.WORKER
+CONN              = verben.CONN
+FATAL             = verben.FATAL
+ERROR             = verben.ERROR
+WRANING           = verben.WARNING
+NOTICE            = verben.NOTICE
+DEBUG             = verben.DEBUG
+VERBEN_OK         = verben.VERBEN_OK
+VERBEN_ERROR      = verben.VERBEN_ERROR
+VERBEN_CONN_CLOSE = verben.VERBEN_CONN_CLOSE
+
 
 function handle_init(conf, t)
-    if (t == 0) then
-        log("DEBUG", "lua handle_init in MASTER")
-    elseif (t == 1) then
-        log("DEBUG", "lua handle_init in WORKER")
-    elseif (t == 2) then
-        log("DEBUG", "lua handle_init in CONN")
+    if t == MASTER then
+        log(DEBUG, "lua handle_init in MASTER")
+    elseif t == WORKER then
+        log(DEBUG, "lua handle_init in WORKER")
+    elseif t == CONN then
+        log(DEBUG, "lua handle_init in CONN")
     end
     return 0
 end
 
 function handle_open(params)
-    log("DEBUG", "Connection from ", params["remote_ip"], ":",
+    log(DEBUG, "Connection from ", params["remote_ip"], ":",
         params["remote_port"])
-    return 0, "Welcome to verben lua\r\n"
+    time = os.time()
+
+    return 2, "Welcome to verben lua[" .. time .. "]\r\n"
 end
 
 function handle_close(params)
-    log("DEBUG", "Connection from ", params["remote_ip"], ":",
+    log(DEBUG, "Connection from ", params["remote_ip"], ":",
         params["remote_port"], " closed")
 end
 
 function handle_input(params)
-    log("DEBUG", "connection:", params["remote_ip"], ":", 
+    log(DEBUG, "connection:", params["remote_ip"], ":", 
         params["remote_port"]);
 
     return params["length"]
 end
 
 function handle_process(params)
-    log("DEBUG", "Connection from ", params["remote_ip"], ":",
+    log(DEBUG, "Connection from ", params["remote_ip"], ":",
         params["remote_port"], " closed")
     return 0, params["content"];
 end
 
 function handle_fini(conf, t)
-    if (t == 0) then
-        log("DEBUG", "lua handle_fini in MASTER")
-    elseif (t == 1) then
-        log("DEBUG", "lua handle_fini in WORKER")
-    elseif (t == 2) then
-        log("DEBUG", "lua handle_fini in CONN")
+    if t == MASTER then
+        log(DEBUG, "lua handle_fini in MASTER")
+    elseif t == WORKER then
+        log(DEBUG, "lua handle_fini in WORKER")
+    elseif t == CONN then
+        log(DEBUG, "lua handle_fini in CONN")
     end
 end
