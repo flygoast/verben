@@ -10,6 +10,7 @@ _v = nil
 -- functions exported from vlua core.
 log               = verben.log
 config            = verben.config
+stackdump         = verben.stackdump
 
 -- contants exported from vlua core.
 MASTER            = verben.MASTER

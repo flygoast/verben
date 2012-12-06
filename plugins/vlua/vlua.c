@@ -94,6 +94,35 @@ static int v_log(lua_State *L) {
     return 0;
 }
 
+/* Dump the lua stack, for debugging */
+static int v_stackdump(lua_State *L) {
+    int i;
+    int top = lua_gettop(L);
+
+    DEBUG_LOG("total in stack %d", top);
+
+    for (i = 0; i <= top; ++i) {
+        int t = lua_type(L, i);
+        switch (t) {
+        case LUA_TSTRING:
+            DEBUG_LOG("%d string: '%s'", i, lua_tostring(L, i));
+            break;
+        case LUA_TBOOLEAN:
+            DEBUG_LOG("%d boolean: %s", i, 
+                    lua_toboolean(L, i) ? "true" : "false");
+            break;
+        case LUA_TNUMBER:
+            DEBUG_LOG("%d number: %g", i, lua_tonumber(L, i));
+            break;
+            
+        default:
+            DEBUG_LOG("%d %s", i, lua_typename(L, t));
+            break;
+        }
+    }
+    return 0;
+}
+
 static int push_config(void *key, void *value, void *ptr) {
     conf_media_t *media = (conf_media_t *)ptr;
     lua_pushstring(media->L, (char *)value);
@@ -122,6 +151,7 @@ static int v_config(lua_State *L) {
 static const luaL_Reg verben_lib[] = {
     { "config",     v_config    },
     { "log",        v_log       },
+    { "stackdump",  v_stackdump },
     { NULL,         NULL        }
 };
 
