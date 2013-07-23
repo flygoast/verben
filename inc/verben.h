@@ -26,4 +26,6 @@ extern shmq_t *recv_queue;
 extern shmq_t *send_queue;
 extern dll_func_t dll;
 extern sig_atomic_t vb_worker_quit;
+extern sig_atomic_t vb_quit;
+
 #endif /* __VERBEN_H_INCLUDED__ */

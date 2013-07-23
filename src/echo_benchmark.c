@@ -12,6 +12,8 @@
 #include "sds.h"
 #include "anet.h"
 
+static int quit;
+
 static struct config {
     ae_event_loop   *el;
     char            *hostip;
@@ -175,7 +177,7 @@ static void reset_client(client *c) {
 static void client_done(client *c) {
     if (conf.requests_finished == conf.requests) {
         free_client(c);
-        ae_stop(conf.el);
+        quit = 1;
         return;
     }
 
@@ -228,7 +230,7 @@ static void benchmark(char *title, char *content, int len) {
     create_missing_clients(c);
 
     conf.start = mstime();
-    ae_main(conf.el);
+    ae_main(conf.el, &quit);
     conf.total_latency = mstime() - conf.start;
 
     show_latency_report();

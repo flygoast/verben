@@ -48,8 +48,10 @@ void worker_process_cycle(void *data) {
         ret = shmq_pop(recv_queue, (void **)&msg, &msg_len, 
                     SHMQ_WAIT|SHMQ_LOCK);
         if (ret < 0) {
-            ERROR_LOG("shmq_pop from recv_queue in worker[%d] failed:%s",
-                    getpid(), strerror(errno));
+            if (errno != EINTR) {
+                ERROR_LOG("shmq_pop from recv_queue in worker[%d] failed:%s",
+                        getpid(), strerror(errno));
+            }
             if (msg) free(msg);
             continue;
         } else if (ret == 1) {

@@ -14,6 +14,9 @@
 #ifdef HAVE_BACKTRACE
 #include <execinfo.h>
 #endif /* HAVE_BACKTRACE */
+
+#undef HAVE_BACKTRACE
+
 #include "verben.h"
 #include "daemon.h"
 #include "notifier.h"
@@ -175,15 +178,18 @@ static void vb_signal_handler(int signo) {
     case VB_PROCESS_WORKER:
         switch (signo) {
         case SIGTERM:
-            vb_worker_quit = 1;
-            shmq_stop_wait();
+            if (vb_quit == 0) {
+                vb_quit = 1;
+                vb_worker_quit = 1;
+                shmq_stop_wait();
+            }
             break;
         }
         break;
     case VB_PROCESS_CONN:
         switch (signo) {
         case SIGTERM:
-            ae_stop(ael);
+            vb_quit = 1;
             break;
         }
         break;

@@ -41,7 +41,6 @@ typedef struct shm_msg {
     char            data[0];
 } __attribute__((packed)) shm_msg;
 
-extern ae_event_loop    *ael;
 void conn_process_cycle(void *data);
 
 #endif /* __CONN_H_INCLUDED__ */

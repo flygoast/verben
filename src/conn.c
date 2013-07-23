@@ -22,7 +22,6 @@
 #define IOBUF_SIZE      4096
 #define MAX_PROT_LEN    4096
 
-ae_event_loop   *ael;
 static int      listen_fd;
 static char     sock_error[ANET_ERR_LEN];
 static dlist    *clients; 
@@ -32,6 +31,7 @@ static time_t   unix_clock;
 static pid_t    conn_pid;
 static vector_t *conn_vec;
 static client_conn *null = NULL;
+static ae_event_loop *ael;
 #ifdef DEBUG
 static unsigned int identifier = 0;
 #endif /* DEBUG */
@@ -414,6 +414,8 @@ void conn_process_cycle(void *data) {
         exit(0);
     }
 
+    DEBUG_LOG("ael pointer: %p", ael);
+
     host = conf_get_str_value(conf, "server", "0.0.0.0");
     port = conf_get_int_value(conf, "port", 8773);
     listen_fd = anet_tcp_server(sock_error, host, port);
@@ -453,7 +455,7 @@ void conn_process_cycle(void *data) {
     }
 
     redirect_std();
-    ae_main(ael);
+    ae_main(ael, &vb_quit);
 
     if (dll.handle_fini) {
         dll.handle_fini(data, vb_process);

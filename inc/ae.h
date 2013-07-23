@@ -63,7 +63,6 @@ typedef struct ae_event_loop {
     ae_file_event   events[AE_SETSIZE]; /* Registered events */
     ae_fired_event  fired[AE_SETSIZE];  /* Fired events */
     ae_time_event   *time_event_head;
-    int stop;
     void *api_data; /* This is used for polling API specific data. */
     ae_before_sleep_proc    *before_sleep;
 } ae_event_loop;
@@ -71,7 +70,6 @@ typedef struct ae_event_loop {
 /* Prototypes */
 ae_event_loop   *ae_create_event_loop(void);
 void ae_free_event_loop(ae_event_loop *el);
-void ae_stop(ae_event_loop *el);
 int ae_create_file_event(ae_event_loop *el, int fd, int mask,
         ae_file_proc *proc, void *client_data);
 void ae_delete_file_event(ae_event_loop *el, int fd, int mask);
@@ -82,7 +80,7 @@ long long ae_create_time_event(ae_event_loop *el, long long milliseconds,
 int ae_delete_time_event(ae_event_loop *el, long long id);
 int ae_process_events(ae_event_loop *el, int flags);
 int ae_wait(int fd, int mask, long long milliseconds);
-void ae_main(ae_event_loop *el);
+void ae_main(ae_event_loop *el, int *quit);
 char *ae_get_api_name(void);
 void ae_set_before_sleep_proc(ae_event_loop *el, 
         ae_before_sleep_proc *before_sleep);

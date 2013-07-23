@@ -37,7 +37,6 @@ ae_event_loop *ae_create_event_loop(void) {
     }
     el->time_event_head = NULL;
     el->time_event_next_id = 0;
-    el->stop = 0;
     el->maxfd = -1;
     el->before_sleep = NULL;
     if (ae_api_create(el) == -1) {
@@ -69,10 +68,6 @@ void ae_free_event_loop(ae_event_loop *el) {
     }
 
     free(el);
-}
-
-void ae_stop(ae_event_loop *el) {
-    el->stop = 1;
 }
 
 /* Register a file event. */
@@ -419,9 +414,8 @@ int ae_wait(int fd, int mask, long long milliseconds) {
 }
 
 /* main loop of the event-driven framework */
-void ae_main(ae_event_loop *el) {
-    el->stop = 0;
-    while (!el->stop) {
+void ae_main(ae_event_loop *el, int *quit) {
+    while (!*quit) {
         if (el->before_sleep != NULL) {
             el->before_sleep(el);
         }
