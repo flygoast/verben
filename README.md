@@ -1,13 +1,4 @@
-verben
-======
-                  __             
- _   _____  _____/ /_  ___  ____ 
-| | / / _ \/ ___/ __ \/ _ \/ __ \
-| |/ /  __/ /  / /_/ /  __/ / / /
-|___/\___/_/  /_.___/\___/_/ /_/ 
-                                 
-![Avatar](https://github.com/flygoast/verben/misc/verben.png)
-
+![Avatar](https://raw.github.com/flygoast/verben/master/misc/verben.png)
 
 Introduction
 ------------
@@ -15,7 +6,7 @@ Introduction
 business code. `verben` is responsible for networking processing. 
 You need not to care it.
 
-In `plugins` directories, there are some plugin demos. You can refer
+In *plugins* directories, there are some plugin demos. You can refer
 them to write your business code.
 
 Building & Running
@@ -31,13 +22,13 @@ Building & Running
 
 3) build plugin, e.g. echo
 
-    cd ../plugin/echo
+    cd ../plugins/echo
     make && make install
 
 4) Running verben
 
     cd ../../bin/
-    verben
+    ./verben
 
 Plugins
 -------
