@@ -586,15 +586,15 @@ int main(int argc, char *argv[]) {
     pid = pid_file_running(pid_file);
 
     if (daemon_action == DAEMON_START) {
-        daemonize(1, 1);
-        rlimit_reset();
-
         if (pid == (pid_t)-1) {
             BOOT_FAILED("Checking running daemon:%s", strerror(errno));
         } else if (pid > 0) {
             BOOT_FAILED("The daemon have been running, pid=%lu", 
                     (unsigned int)pid);
         }
+
+        daemonize(1, 1);
+        rlimit_reset();
     
         if ((pid_file_create(pid_file)) != 0) {
             BOOT_FAILED("Create pid file failed: %s", strerror(errno));
