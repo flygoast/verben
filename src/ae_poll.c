@@ -84,14 +84,19 @@ static int ae_api_poll(ae_event_loop *el, struct timeval *tvp) {
     retval = poll(state->events, state->nfds, 
             tvp ? (tvp->tv_sec * 1000 + tvp->tv_usec / 1000) : -1);
     if (retval > 0) {
-        int i = 0;
+        int i = 0, n = 0;
         numevents = retval;
-        for (i = 0; i < numevents; ++i) {
+        for (i = 0; i < state->nfds; ++i) {
             int mask = 0;
             struct pollfd *pfd = state->events + i;
             if (pfd->fd < 0) {
                 continue; /* Skip the ignored element. */
             }
+
+            if (pfd->revents == 0) {
+                continue;
+            }
+
             if (pfd->revents & POLLIN) {
                 mask |= AE_READABLE;
             }
@@ -99,8 +104,8 @@ static int ae_api_poll(ae_event_loop *el, struct timeval *tvp) {
             if (pfd->revents & POLLOUT) {
                 mask |= AE_WRITABLE;
             }
-            el->fired[i].fd = pfd->fd;
-            el->fired[i].mask = mask;
+            el->fired[n].fd = pfd->fd;
+            el->fired[n++].mask = mask;
         }
     }
     return numevents;
