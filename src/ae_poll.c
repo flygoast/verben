@@ -53,7 +53,7 @@ static int ae_api_add_event(ae_event_loop *el, int fd, int mask) {
 
 static void ae_api_del_event(ae_event_loop *el, int fd, int mask) {
     ae_api_state *state = el->api_data;
-    int i = 0;
+    int i = 0, num;
     struct pollfd *pfd = NULL;
     for (i = 0; i < state->nfds; i++) {
         if (fd == state->events[i].fd) {
@@ -74,7 +74,12 @@ static void ae_api_del_event(ae_event_loop *el, int fd, int mask) {
     }
 
     if (pfd->events == 0) {
-        pfd->fd = -1; /* ignore the element of pollfd array */
+        num = state->nfds - i - 1;
+        if (num > 0) {
+            memmove(&state->events[i], &state->events[i + 1],
+                    sizeof(struct pollfd) * num);
+            state->nfds--;
+        }
     }
 }
 
@@ -89,9 +94,6 @@ static int ae_api_poll(ae_event_loop *el, struct timeval *tvp) {
         for (i = 0; i < state->nfds; ++i) {
             int mask = 0;
             struct pollfd *pfd = state->events + i;
-            if (pfd->fd < 0) {
-                continue; /* Skip the ignored element. */
-            }
 
             if (pfd->revents == 0) {
                 continue;
