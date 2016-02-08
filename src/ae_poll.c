@@ -4,6 +4,7 @@
 
 typedef struct ae_api_state {
     int nfds;
+    int index[AE_SETSIZE];
     struct pollfd events[AE_SETSIZE];
 } ae_api_state;
 
@@ -14,6 +15,7 @@ static int ae_api_create(ae_event_loop *el) {
         return -1;
     }
 
+    memset(state->index, -1, sizeof(int) * AE_SETSIZE);
     memset(state->events, 0, sizeof(struct pollfd) * AE_SETSIZE);
     el->api_data = state;
     return 0;
@@ -29,14 +31,13 @@ static int ae_api_add_event(ae_event_loop *el, int fd, int mask) {
     ae_api_state *state = el->api_data;
     int i = 0;
     struct pollfd *pfd = NULL;
-    for (i = 0; i < state->nfds; i++) {
-        if (fd == state->events[i].fd) {
-            pfd = &state->events[i];
-        }
-    }
 
-    if (!pfd) {
+    i = state->index[fd];
+    if (i == -1) {
+        state->index[fd] = state->nfds;
         pfd = &state->events[state->nfds++];
+    } else {
+        pfd = &state->events[i];
     }
 
     if (mask & AE_READABLE) {
@@ -55,15 +56,12 @@ static void ae_api_del_event(ae_event_loop *el, int fd, int mask) {
     ae_api_state *state = el->api_data;
     int i = 0;
     struct pollfd *pfd = NULL;
-    for (i = 0; i < state->nfds; i++) {
-        if (fd == state->events[i].fd) {
-            pfd = &state->events[i];
-        }
-    }
 
-    if (!pfd) {
+    i = state->index[fd];
+    if (i == -1) {
         return;
     }
+    pfd = state->events[i];
 
     if (mask & AE_READABLE) {
         pfd->events &= ~POLLIN;
@@ -75,9 +73,9 @@ static void ae_api_del_event(ae_event_loop *el, int fd, int mask) {
 
     if (pfd->events == 0) {
         if (i != state->nfds - 1) {
+            state->index[state->events[state->nfds - 1].fd] = i;
             memcpy(&state->events[i], &state->events[state->nfds - 1],
                    sizeof(struct pollfd));
-            state->nfds--;
         }
     }
 }
