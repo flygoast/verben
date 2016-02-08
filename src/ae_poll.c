@@ -61,7 +61,7 @@ static void ae_api_del_event(ae_event_loop *el, int fd, int mask) {
     if (i == -1) {
         return;
     }
-    pfd = state->events[i];
+    pfd = &state->events[i];
 
     if (mask & AE_READABLE) {
         pfd->events &= ~POLLIN;
