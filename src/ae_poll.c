@@ -72,6 +72,7 @@ static void ae_api_del_event(ae_event_loop *el, int fd, int mask) {
     }
 
     if (pfd->events == 0) {
+        state->index[fd] = -1;
         if (i != state->nfds - 1) {
             state->index[state->events[state->nfds - 1].fd] = i;
             memcpy(&state->events[i], &state->events[state->nfds - 1],
